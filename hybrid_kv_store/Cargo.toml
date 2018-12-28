@@ -1,0 +1,8 @@
+[package]
+name = "hybrid_kv_store"
+version = "0.1.0"
+authors = ["jameslennon <jameslennon321@gmail.com>"]
+
+[dependencies]
+byteorder = "1.2.7"
+
