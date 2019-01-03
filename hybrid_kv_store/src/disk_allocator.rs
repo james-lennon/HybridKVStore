@@ -8,9 +8,9 @@ pub trait DiskAllocator {
 }
 
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SingleFileBufferAllocator {
-    filename: String,
+    filename: Box<String>,
     cur_offset: usize,
 }
 
@@ -20,7 +20,7 @@ impl SingleFileBufferAllocator {
         let filename = format!("{}/{}", directory.to_string(), "file_buffer.data".to_string());
         let file = File::create(&filename)?;
         Ok(SingleFileBufferAllocator {
-            filename: filename,
+            filename: Box::new(filename),
             cur_offset: 0,
         })
     }
@@ -32,7 +32,7 @@ impl DiskAllocator for SingleFileBufferAllocator {
     fn allocate(&mut self, size: usize) -> Result<DiskLocation> {
         let prev_offset = self.cur_offset;
         self.cur_offset += size;
-        Ok(DiskLocation::new(&self.filename, prev_offset as u64))
+        Ok(DiskLocation::new(&*self.filename, prev_offset as u64))
     }
 
 }
