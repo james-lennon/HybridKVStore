@@ -2,6 +2,10 @@ mod disk_location;
 mod btree;
 mod disk_allocator;
 mod kvstore;
+mod bit_vector;
+mod lsmtree;
+mod atomic_deque;
+mod constants;
 
 
 use btree::{BTree, BTreeOptions};

@@ -17,7 +17,6 @@ fn read_bytes_from_file(file: &mut File, offset: u64, count: usize) -> io::Resul
     Ok(buffer)
 }
 
-
 fn read_ints_from_file(file: &mut File, offset: u64, count: usize) -> io::Result<Vec<i32>> {
     let mut buffer = vec![0; count];
     file.seek(SeekFrom::Start(offset))?;
@@ -63,22 +62,27 @@ impl DiskLocation {
 
     pub fn read_ints(&self, offset: u64, count: usize) -> io::Result<Vec<i32>> {
         let mut file = File::open(&self.filename)?;
-        read_ints_from_file(&mut file, 4 * offset + self.offset, count)
+        read_ints_from_file(&mut file, offset + self.offset, count)
     }
 
     pub fn read_int(&self, offset: u64) -> io::Result<i32> {
         let mut file = File::open(&self.filename)?;
-        read_int_from_file(&mut file, 4 * offset + self.offset)
+        read_int_from_file(&mut file, offset + self.offset)
+    }
+
+    pub fn read_byte(&self, offset: u64) -> io::Result<u8> {
+        let mut file = File::open(&self.filename)?;
+        Ok(read_bytes_from_file(&mut file, offset + self.offset, 1)?[0])
     }
 
     pub fn write(&self, offset: u64, value: i32) -> io::Result<()> {
         let mut file = OpenOptions::new().write(true).read(true).open(&self.filename)?;
-        write_int_to_file(&mut file, 4 * offset + self.offset, value)
+        write_int_to_file(&mut file, offset + self.offset, value)
     }
 
     pub fn write_all(&self, offset: u64, values: &[i32]) -> io::Result<()> {
         let mut file = File::open(&self.filename)?;
-        write_ints_to_file(&mut file, 4 * offset + self.offset, values)
+        write_ints_to_file(&mut file, offset + self.offset, values)
     }
 
     pub fn append(&self, offset: u64, value: i32) -> io::Result<()> {

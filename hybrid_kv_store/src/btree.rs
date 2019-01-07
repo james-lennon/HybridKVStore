@@ -202,15 +202,15 @@ impl LeafNode {
         let mut fence = 0;
 
         for i in 0..FANOUT {
-            let key = self.location.read_int((2 * i) as u64)?;
-            let val = self.location.read_int((2 * i + 1) as u64)?;
+            let key = self.location.read_int(4 * (2 * i) as u64)?;
+            let val = self.location.read_int(4 * (2 * i + 1) as u64)?;
             // Write to selected partition
             if i < FANOUT / 2 {
-                child1.location.write((2 * i) as u64, key)?;
-                child1.location.write((2 * i + 1) as u64, val)?;
+                child1.location.write(4 * (2 * i) as u64, key)?;
+                child1.location.write(4 * (2 * i + 1) as u64, val)?;
             } else {
-                child2.location.write((2 * (i - FANOUT / 2)) as u64, key)?;
-                child2.location.write((2 * (i - FANOUT / 2) + 1) as u64, val)?;
+                child2.location.write(4 * (2 * (i - FANOUT / 2)) as u64, key)?;
+                child2.location.write(4 * (2 * (i - FANOUT / 2) + 1) as u64, val)?;
             }
             // Save new fence key
             if i == FANOUT / 2 {
@@ -239,10 +239,10 @@ impl LeafNode {
             // Scan for insertion point
             // TODO: potentially use binary search here
             while i < self.size {
-                let read_key = self.location.read_int((2 * i) as u64)?;
+                let read_key = self.location.read_int(4 * (2 * i) as u64)?;
                 if key == read_key {
                     // Replace value and return
-                    self.location.write((2 * i + 1) as u64, val)?;
+                    self.location.write(4 * (2 * i + 1) as u64, val)?;
                     return Ok(InsertResult::NoSplit);
                 }
                 if key < read_key {
@@ -254,17 +254,17 @@ impl LeafNode {
             let mut next_key = key;
             let mut next_val = val;
             while i < self.size {
-                let tmp_key = self.location.read_int((2 * i) as u64)?;
-                let tmp_val = self.location.read_int((2 * i + 1) as u64)?;
-                self.location.write((2 * i) as u64, next_key)?;
-                self.location.write((2 * i + 1) as u64, next_val)?;
+                let tmp_key = self.location.read_int(4 * (2 * i) as u64)?;
+                let tmp_val = self.location.read_int(4 * (2 * i + 1) as u64)?;
+                self.location.write(4 * (2 * i) as u64, next_key)?;
+                self.location.write(4 * (2 * i + 1) as u64, next_val)?;
                 next_key = tmp_key;
                 next_val = tmp_val;
                 i += 1;
             }
             // Write last entry without reading to prevent error
-            self.location.write((2 * i) as u64, next_key)?;
-            self.location.write((2 * i + 1) as u64, next_val)?;
+            self.location.write(4 * (2 * i) as u64, next_key)?;
+            self.location.write(4 * (2 * i + 1) as u64, next_val)?;
             // Update size
             self.size += 1;
             Ok(InsertResult::NoSplit)
@@ -277,7 +277,7 @@ impl LeafNode {
         // Scan for key to delete
         // TODO: potentially use binary search here
         while i < self.size {
-            let read_key = self.location.read_int((2 * i) as u64)?;
+            let read_key = self.location.read_int(4 * (2 * i) as u64)?;
             if key == read_key {
                 found = true;
                 break;
@@ -289,10 +289,10 @@ impl LeafNode {
         }
         // Rewrite entries to apply deletion
         while i < (self.size - 1) {
-            let tmp_key = self.location.read_int((2 * i + 2) as u64)?;
-            let tmp_val = self.location.read_int((2 * i + 3) as u64)?;
-            self.location.write((2 * i) as u64, tmp_key)?;
-            self.location.write((2 * i + 1) as u64, tmp_val)?;
+            let tmp_key = self.location.read_int(4 * (2 * i + 2) as u64)?;
+            let tmp_val = self.location.read_int(4 * (2 * i + 3) as u64)?;
+            self.location.write(4 * (2 * i) as u64, tmp_key)?;
+            self.location.write(4 * (2 * i + 1) as u64, tmp_val)?;
             i += 1;
         }
         // Update size
@@ -304,9 +304,9 @@ impl LeafNode {
         let mut i = 0;
         // Scan for matching key
         while i < self.size {
-            let read_key = self.location.read_int((2 * i) as u64)?;
+            let read_key = self.location.read_int(4 * (2 * i) as u64)?;
             if key == read_key {
-                let val = self.location.read_int((2 * i + 1) as u64)?;
+                let val = self.location.read_int(4 * (2 * i + 1) as u64)?;
                 return Ok(Some(val));
             }
             i += 1;
