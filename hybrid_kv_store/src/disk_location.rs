@@ -106,4 +106,8 @@ impl DiskLocation {
         write_ints_to_file(&mut file, offset + self.offset, values)
     }
 
+    pub fn get_offset(&self) -> u64 {
+        self.offset
+    }
+
 }

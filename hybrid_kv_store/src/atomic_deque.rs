@@ -38,8 +38,8 @@ impl<T> AtomicDeque<T> where T: Clone {
             panic!("Attempted to push into full atomic buffer; resizing not yet supported.");
         }
         let old_end = self.end.load(Ordering::Acquire);
-        self.end.store((old_end + 1) % self.capacity(), Ordering::Release);
         self.buffer[old_end] = val;
+        self.end.store((old_end + 1) % self.capacity(), Ordering::Release);
     }
 
     pub fn drop_first(&mut self, n: usize) {

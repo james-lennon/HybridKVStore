@@ -47,6 +47,7 @@ fn merge_entries_into(entries1: &Vec<(i32, i32, bool)>, entries2: &Vec<(i32, i32
             break;
         }
     }
+    // println!("\nMERGING\n{:?}\nand\n{:?}\n=>\n{:?}", entries1, entries2, result);
 }
 
 
@@ -91,7 +92,9 @@ impl Run {
     }
 
     fn search(&self, key: i32) -> SearchResult {
+        // println!("searching bloom...");
         if !self.bloom_filter.borrow_mut().get(&key) {
+            // println!("\tnot found");
             return SearchResult::NotFound;
         }
         let num_fences = ((self.size as f64 / ENTRIES_PER_PAGE as f64).ceil() - 1.0) as usize;
@@ -103,11 +106,13 @@ impl Run {
             i += 1;
         }
 
+        // println!("{:?}", (self.size - i * ENTRIES_PER_PAGE));
         for j in 0..min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)) {
-            let read_key = self.disk_location.read_int(((i + j) * ENTRY_SIZE) as u64).unwrap();
+            let read_key = self.disk_location.read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64).unwrap();
+            // println!("{:?} {}", read_key, key);
             if key == read_key {
-                let read_val = self.disk_location.read_int(((i + j) * ENTRY_SIZE + 4) as u64).unwrap();
-                let deleted = self.disk_location.read_byte(((i + j) * ENTRY_SIZE + 4 + 1) as u64).unwrap();
+                let read_val = self.disk_location.read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE + 4) as u64).unwrap();
+                let deleted = self.disk_location.read_byte(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE + 4 + 1) as u64).unwrap();
                 if deleted == 1 {
                     return SearchResult::Deleted;
                 } else {
@@ -119,6 +124,7 @@ impl Run {
     }
 
     fn read_all(&self) -> Vec<(i32, i32, bool)> {
+        assert!(self.size <= self.capacity);
         let mut result = Vec::with_capacity(self.size);
         for i in 0..self.size {
             let key = self.disk_location.read_int((i * ENTRY_SIZE) as u64).unwrap();
@@ -131,12 +137,14 @@ impl Run {
 
     fn write_all(&mut self, entries: &Vec<(i32, i32, bool)>) {
         assert!(entries.len() <= self.capacity);
+        // println!("writing...");
         for i in 0..entries.len() {
             self.disk_location.write_int((i * ENTRY_SIZE) as u64, entries[i].0).unwrap();
             self.disk_location.write_int((i * ENTRY_SIZE + 4) as u64, entries[i].1).unwrap();
             let byte = if entries[i].2 { 1 } else { 0 };
             self.disk_location.write_byte((i * ENTRY_SIZE + 5) as u64, byte).unwrap();
 
+            // println!("wrote {}", entries[i].0);
             // Add to bloom
             self.bloom_filter.borrow_mut().add(&entries[i].0);
             // Add fences
@@ -144,20 +152,8 @@ impl Run {
                 self.fences.push(entries[i].0);
             }
         }
-        self.size = entries.len()
+        self.size = entries.len();
     }
-
-    // fn merge(&mut self, source: MergeSource) -> MergeResult {
-    //     match source {
-    //         MergeSource::Buffer(buf) => {
-    //             let entries1 = self.read_all();
-
-    //         },
-    //         MergeSource::Disk(disk_location) => {
-    //             panic!("Unimplemented");
-    //         },
-    //     }
-    // }
 }
 
 
@@ -215,9 +211,10 @@ impl LSMTree {
                 buffer.clone_contents_into(&mut sorted_buffer);
                 let num_read = sorted_buffer.len();
 
-                if sorted_buffer.len() == 0 {
+                if num_read == 0 {
                     continue;
                 }
+                // println!("moving from buffer: {:?}\n{:?}", sorted_buffer, buffer);
 
                 let mut set = HashSet::new();
                 let mut i = sorted_buffer.len() - 1;
@@ -264,8 +261,7 @@ impl LSMTree {
                     }
                     let capacity = constants::BUFFER_CAPACITY * ((constants::TREE_RATIO).pow((level + 1) as u32));
                     if level >= levels.len() {
-                        let capacity = constants::BUFFER_CAPACITY * ((constants::TREE_RATIO).pow((level + 1) as u32));
-                        let disk_location = disk_allocator.allocate(capacity).unwrap();
+                        let disk_location = disk_allocator.allocate(ENTRY_SIZE * capacity).unwrap();
                         let mut new_run = Run::new(disk_location, capacity);
                         buffer_to_merge =
                             match buffer_to_merge {
@@ -287,7 +283,7 @@ impl LSMTree {
                                     let mut new_buf = Vec::new();
                                     merge_entries_into(&levels[level].read_all(), &buf, &mut new_buf);
 
-                                    let disk_location = disk_allocator.allocate(capacity).unwrap();
+                                    let disk_location = disk_allocator.allocate(ENTRY_SIZE * capacity).unwrap();
                                     let mut new_run = Run::new(disk_location, capacity);
                                     let mut new_buffer_to_merge = None;
                                     if new_buf.len() <= capacity {
@@ -320,6 +316,8 @@ impl LSMTree {
 impl KVStore for LSMTree {
     
     fn get(&mut self, key : i32) -> Option<i32> {
+        // println!("searching for {}", key);
+        // println!("{:?}", unsafe {&*self.buffer.get()});
         match self.search_buffer(key) {
             Some(val) => Some(val),
             None => {
@@ -342,7 +340,12 @@ impl KVStore for LSMTree {
     }
 
     fn put(&mut self, key : i32, val : i32) {
-        unsafe { &mut *self.buffer.get() }.push((key, val, false))
+        let mut buffer = unsafe { &mut *self.buffer.get() };
+
+        while buffer.len() == constants::BUFFER_CAPACITY {
+            // Spin until thread empties buffer
+        }
+        buffer.push((key, val, false));
     }
 
     fn scan(&self, low : i32, high : i32) -> Vec<i32> {
