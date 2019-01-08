@@ -6,6 +6,7 @@ use std::io::Read;
 use std::fs::{File, OpenOptions};
 use std::io::SeekFrom;
 use std::io::Seek;
+use std::io::Write;
 
 use self::byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
@@ -29,6 +30,11 @@ fn read_int_from_file(file: &mut File, offset: u64) -> io::Result<i32> {
     file.read_i32::<BigEndian>()
 }
 
+fn write_byte_to_file(file: &mut File, offset: u64, val: u8) -> io::Result<()> {
+    file.seek(SeekFrom::Start(offset))?;
+    file.write(&[val])?;
+    Ok(())
+}
 
 fn write_int_to_file(file: &mut File, offset: u64, val: i32) -> io::Result<()> {
     file.seek(SeekFrom::Start(offset))?;
@@ -75,9 +81,14 @@ impl DiskLocation {
         Ok(read_bytes_from_file(&mut file, offset + self.offset, 1)?[0])
     }
 
-    pub fn write(&self, offset: u64, value: i32) -> io::Result<()> {
+    pub fn write_int(&self, offset: u64, value: i32) -> io::Result<()> {
         let mut file = OpenOptions::new().write(true).read(true).open(&self.filename)?;
         write_int_to_file(&mut file, offset + self.offset, value)
+    }
+
+    pub fn write_byte(&self, offset: u64, value: u8) -> io::Result<()> {
+        let mut file = OpenOptions::new().write(true).read(true).open(&self.filename)?;
+        write_byte_to_file(&mut file, offset + self.offset, value)
     }
 
     pub fn write_all(&self, offset: u64, values: &[i32]) -> io::Result<()> {

@@ -206,11 +206,11 @@ impl LeafNode {
             let val = self.location.read_int(4 * (2 * i + 1) as u64)?;
             // Write to selected partition
             if i < FANOUT / 2 {
-                child1.location.write(4 * (2 * i) as u64, key)?;
-                child1.location.write(4 * (2 * i + 1) as u64, val)?;
+                child1.location.write_int(4 * (2 * i) as u64, key)?;
+                child1.location.write_int(4 * (2 * i + 1) as u64, val)?;
             } else {
-                child2.location.write(4 * (2 * (i - FANOUT / 2)) as u64, key)?;
-                child2.location.write(4 * (2 * (i - FANOUT / 2) + 1) as u64, val)?;
+                child2.location.write_int(4 * (2 * (i - FANOUT / 2)) as u64, key)?;
+                child2.location.write_int(4 * (2 * (i - FANOUT / 2) + 1) as u64, val)?;
             }
             // Save new fence key
             if i == FANOUT / 2 {
@@ -242,7 +242,7 @@ impl LeafNode {
                 let read_key = self.location.read_int(4 * (2 * i) as u64)?;
                 if key == read_key {
                     // Replace value and return
-                    self.location.write(4 * (2 * i + 1) as u64, val)?;
+                    self.location.write_int(4 * (2 * i + 1) as u64, val)?;
                     return Ok(InsertResult::NoSplit);
                 }
                 if key < read_key {
@@ -256,15 +256,15 @@ impl LeafNode {
             while i < self.size {
                 let tmp_key = self.location.read_int(4 * (2 * i) as u64)?;
                 let tmp_val = self.location.read_int(4 * (2 * i + 1) as u64)?;
-                self.location.write(4 * (2 * i) as u64, next_key)?;
-                self.location.write(4 * (2 * i + 1) as u64, next_val)?;
+                self.location.write_int(4 * (2 * i) as u64, next_key)?;
+                self.location.write_int(4 * (2 * i + 1) as u64, next_val)?;
                 next_key = tmp_key;
                 next_val = tmp_val;
                 i += 1;
             }
             // Write last entry without reading to prevent error
-            self.location.write(4 * (2 * i) as u64, next_key)?;
-            self.location.write(4 * (2 * i + 1) as u64, next_val)?;
+            self.location.write_int(4 * (2 * i) as u64, next_key)?;
+            self.location.write_int(4 * (2 * i + 1) as u64, next_val)?;
             // Update size
             self.size += 1;
             Ok(InsertResult::NoSplit)
@@ -291,8 +291,8 @@ impl LeafNode {
         while i < (self.size - 1) {
             let tmp_key = self.location.read_int(4 * (2 * i + 2) as u64)?;
             let tmp_val = self.location.read_int(4 * (2 * i + 3) as u64)?;
-            self.location.write(4 * (2 * i) as u64, tmp_key)?;
-            self.location.write(4 * (2 * i + 1) as u64, tmp_val)?;
+            self.location.write_int(4 * (2 * i) as u64, tmp_key)?;
+            self.location.write_int(4 * (2 * i + 1) as u64, tmp_val)?;
             i += 1;
         }
         // Update size
