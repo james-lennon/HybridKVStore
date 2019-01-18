@@ -1,5 +1,6 @@
 extern crate byteorder;
 
+use std::cmp::Ordering;
 use std::vec::Vec;
 use std::io;
 use std::io::Read;
@@ -66,6 +67,13 @@ impl DiskLocation {
         }
     }
 
+    pub fn clone_with_offset(&self, offset: u64) -> DiskLocation {
+        DiskLocation {
+            filename: self.filename.clone(),
+            offset: self.offset + offset,
+        }
+    }
+
     pub fn read_ints(&self, offset: u64, count: usize) -> io::Result<Vec<i32>> {
         let mut file = File::open(&self.filename)?;
         read_ints_from_file(&mut file, offset + self.offset, count)
@@ -110,4 +118,26 @@ impl DiskLocation {
         self.offset
     }
 
+}
+
+impl PartialEq for DiskLocation {
+    fn eq(&self, rhs: &DiskLocation) -> bool {
+        self.filename == rhs.filename && self.offset == rhs.offset
+    }
+}
+
+impl Eq for DiskLocation {
+    
+}
+
+impl PartialOrd for DiskLocation {
+    fn partial_cmp(&self, rhs: &DiskLocation) -> Option<Ordering> {
+        Some(Ordering::Equal)
+    }
+}
+
+impl Ord for DiskLocation {
+    fn cmp(&self, rhs: &DiskLocation) -> Ordering {
+        Ordering::Equal
+    }
 }

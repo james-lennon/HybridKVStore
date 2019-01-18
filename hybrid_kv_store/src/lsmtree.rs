@@ -1,6 +1,6 @@
 use std::cell::{RefCell, UnsafeCell};
 use std::cmp::min;
-use std::collections::HashSet;
+use std::collections::{BinaryHeap, HashSet};
 use std::fs::create_dir_all;
 use std::io::Result;
 use std::slice::Iter;
@@ -10,6 +10,7 @@ use std::thread;
 
 use atomic_deque::AtomicDeque;
 use bit_vector::{BloomFilter, BitVector};
+use btree::{BTree, BTreeOptions};
 use constants;
 use disk_allocator::{DiskAllocator, SingleFileBufferAllocator};
 use disk_location::DiskLocation;
@@ -100,13 +101,13 @@ impl Run {
         let num_fences = ((self.size as f64 / ENTRIES_PER_PAGE as f64).ceil() - 1.0) as usize;
         let mut i = 0;
         while i < num_fences {
-            if key > self.fences[i] {
+            if key < self.fences[i] {
                 break;
             }
             i += 1;
         }
 
-        // println!("{:?}", (self.size - i * ENTRIES_PER_PAGE));
+        // println!("{:?}", min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)));
         for j in 0..min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)) {
             let read_key = self.disk_location.read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64).unwrap();
             // println!("{:?} {}", read_key, key);
@@ -169,7 +170,6 @@ pub struct LSMTree {
 
 impl LSMTree {
     
-
     pub fn new(directory: &'static str) -> LSMTree {
         // Create directory if not exists
         create_dir_all(directory).unwrap();
@@ -182,6 +182,96 @@ impl LSMTree {
         };
         result.start_buffer_thread();
         result
+    }
+
+    fn lowest_level_into_btree(&mut self) -> BTree {
+        let levels_ptr = self.levels.load(Ordering::Acquire);
+        let mut levels = unsafe { &mut *levels_ptr };
+        let last_index = levels.len() - 1;
+        let last_run = levels.remove(last_index);
+        let disk_allocator = &self.disk_allocator;
+        let mut btree = BTree::from_disk_location(last_run.disk_location, last_run.fences,
+                                last_run.size, Arc::clone(disk_allocator), BTreeOptions::new());
+
+        self.levels.store(levels_ptr, Ordering::Release);
+        btree
+    }
+
+    fn insert_entries_into_btree(&self, btree: &mut BTree) {
+        // Head contains tuples of (negative key, run_index, offset, size, &disk_location)
+        let mut heap = BinaryHeap::new();
+
+        // TODO: disable flushing here
+        let mut levels = unsafe { &mut *self.levels.load(Ordering::Acquire) };
+        for i in 0..levels.len() {
+            let run = &levels[i];
+            if run.size == 0 {
+                continue;
+            }
+
+            let first_key = run.disk_location.read_int(0).unwrap();
+            heap.push((-first_key, i, 0, run.size, &run.disk_location));
+        }
+
+        while heap.len() > 0 {
+            let (key, run_index, offset, size, disk_location) = heap.pop().unwrap();
+            let mut should_apply = true;
+
+            // To ensure proper merging, skip this entry if there is a more recent
+            // entry on the heap.  Otherwise, remove older entries.
+            loop {
+                match heap.peek() {
+                    Some(&(peek_key, peek_run_index, peek_offset, peek_size, peek_disk_location)) => {
+                        if (key == peek_key) {
+                            if (peek_run_index > run_index) {
+                                heap.pop();
+                                if peek_offset < peek_size - 1 {
+                                    // Re-insert next entry
+                                    let next_key = peek_disk_location
+                                        .read_int(((peek_offset + 1) * ENTRY_SIZE) as u64).unwrap();
+                                    heap.push((next_key, peek_run_index, peek_offset + 1, peek_size, peek_disk_location));
+                                }
+                            } else {
+                                should_apply = false;
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    },
+                    None => break,
+                };
+            }
+
+            if offset < size - 1 {
+                // Re-insert next entry
+                let next_key = disk_location
+                    .read_int(((offset + 1) * ENTRY_SIZE) as u64).unwrap();
+                heap.push((next_key, run_index, offset + 1, size, disk_location));
+            }
+
+            if !should_apply {
+                continue;
+            }
+
+            let val = disk_location.read_int((ENTRY_SIZE * offset + 4) as u64).unwrap();
+            let is_deleted = disk_location.read_byte((ENTRY_SIZE * offset + 8) as u64).unwrap() == 1;
+
+            // Apply entry
+            if is_deleted {
+                btree.delete(key);
+            } else {
+                btree.put(key, val);
+            }
+
+        }
+        // TODO: re-enable flushing here
+    }
+
+    pub fn into_btree(mut self) -> BTree {
+        let mut btree = self.lowest_level_into_btree();
+        self.insert_entries_into_btree(&mut btree);
+        btree
     }
 
     fn search_buffer(&self, key: i32) -> Option<i32> {

@@ -22,6 +22,8 @@ fn main() {
     let mut lsm = LSMTree::new("lsm_data");
     println!("Successfully created LSM-Tree");
     test_kvstore(&mut lsm);
+    println!("Testing transition to B-Tree");
+    test_transition_to_btree(lsm);
 }
 
 fn test_kvstore(store: &mut KVStore) {
@@ -49,4 +51,9 @@ fn test_kvstore(store: &mut KVStore) {
         assert_eq!(store.get(i), Some(i - 2));
     }
     println!("Key-value store passed simple test.");
+}
+
+fn test_transition_to_btree(lsm: LSMTree) {
+    let mut btree = lsm.into_btree();
+    test_kvstore(&mut btree);
 }
