@@ -202,7 +202,7 @@ impl LSMTree {
         let mut heap = BinaryHeap::new();
 
         // TODO: disable flushing here
-        let mut levels = unsafe { &mut *self.levels.load(Ordering::Acquire) };
+        let mut levels = unsafe { &*self.levels.load(Ordering::Acquire) };
         for i in 0..levels.len() {
             let run = &levels[i];
             if run.size == 0 {
@@ -287,7 +287,7 @@ impl LSMTree {
                 }
             }
         }
-        return result;
+        result
     }
 
     fn start_buffer_thread(&self) {

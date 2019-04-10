@@ -6,6 +6,7 @@ mod bit_vector;
 mod lsmtree;
 mod atomic_deque;
 mod constants;
+mod tests;
 
 use std::thread;
 use std::time::Duration;
