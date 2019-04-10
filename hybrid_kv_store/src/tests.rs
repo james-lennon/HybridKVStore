@@ -4,7 +4,7 @@ use btree::{BTree, BTreeOptions};
 use lsmtree::LSMTree;
 use kvstore::KVStore;
 
-use self::rand::thread_rng;
+use self::rand::{thread_rng, Rng};
 use self::rand::seq::SliceRandom;
 
 fn make_btree() -> BTree {
@@ -15,18 +15,23 @@ fn make_lsm() -> LSMTree {
     LSMTree::new("test_lsm")
 }
 
-fn test_put(store: &mut KVStore) {
-    // let mut store = make_btree();
-    let max_val = 10_000;
-    let mut keys: Vec<i32> = (0..max_val).collect();
-    let mut vals: Vec<i32> = (0..max_val).collect();
+fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>) {
+    let mut keys: Vec<i32> = (0..size as i32).collect();
+    let mut vals: Vec<i32> = (0..size as i32).collect();
     let mut rng = thread_rng();
     keys.shuffle(&mut rng);
     vals.shuffle(&mut rng);
 
-    for i in 0 .. max_val {
-        store.put(keys[i as usize], vals[i as usize]);
+    for i in 0 .. size {
+        store.put(keys[i], vals[i]);
     }
+
+    (keys, vals)
+}
+
+fn test_put(store: &mut KVStore) {
+    let max_val = 10_000;
+    let (keys, vals) = rand_init_store(store, max_val);
 
     let mut lookup_idx: Vec<usize> = (0..max_val as usize).collect();
     lookup_idx.shuffle(&mut thread_rng());
@@ -44,6 +49,27 @@ fn test_update(store: &mut KVStore) {
     assert_eq!(store.get(1), Some(13));
 }
 
+fn test_delete(store: &mut KVStore) {
+    let max_val = 10_000;
+    let (keys, vals) = rand_init_store(store, max_val);
+
+    let mut is_deleted = Vec::with_capacity(max_val);
+    for i in 0 .. max_val {
+        let delete = thread_rng().gen_bool(0.5);
+        is_deleted.push(delete);
+
+        if delete {
+            store.delete(keys[i]);
+            assert_eq!(store.get(keys[i]), None);
+        }
+    }
+
+    for i in 0 .. max_val {
+        let expected = if !is_deleted[i] { Some(vals[i]) } else { None };
+        assert_eq!(store.get(keys[i]), expected);
+    }
+}
+
 #[cfg(test)]
 mod test_btree {
     use super::*;
@@ -56,6 +82,11 @@ mod test_btree {
     #[test]
     fn update() {
         test_update(&mut make_btree());
+    }
+
+    #[test]
+    fn delete() {
+        test_delete(&mut make_btree());
     }
 }
 
@@ -71,5 +102,10 @@ mod test_lsm {
     #[test]
     fn update() {
         test_update(&mut make_lsm());
+    }
+
+    #[test]
+    fn delete() {
+        test_delete(&mut make_lsm());
     }
 }

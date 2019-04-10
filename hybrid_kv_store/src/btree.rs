@@ -111,6 +111,7 @@ struct IntermediateNode {
 /**
  * An intermediate node of the B-Tree. Fence pointers, stored in `keys`,
  * contain the *lowest* value in the corresponding child's keys.
+ * Note: we maintain that `keys.len()` is equal to `children.len() - 1`.
  */
 impl IntermediateNode {
 
@@ -154,7 +155,7 @@ impl IntermediateNode {
         {
             let (child, i) = self.find_child(key);
             index = i;
-            // TODO: figure out how to potentially remove child here
+
             match *child {
                 BTreeNode::Intermediate(ref mut node) => {
                     node.delete(key)?;
@@ -168,8 +169,9 @@ impl IntermediateNode {
         }
         // Remove child if necessary
         if is_child_empty {
-            if index > 0 {
-                self.keys.remove(index - 1);
+            if self.keys.len() > 0 {
+                let remove_idx = if index > 0 { index - 1 } else { 0 };
+                self.keys.remove(remove_idx);
             }
             self.children.remove(index);
             // TODO: free file back to OS if deleting a leaf node
@@ -233,7 +235,6 @@ impl IntermediateNode {
                         c2.insert_children(child1, child2, new_fence, index - (constants::FANOUT / 2));
                     }
 
-                    // let return_fence = c2.keys[0];
                     Ok(InsertResult::Split(BTreeNode::Intermediate(Box::new(c1)),
                                            BTreeNode::Intermediate(Box::new(c2)),
                                            return_fence))
