@@ -16,7 +16,7 @@ pub struct SingleFileBufferAllocator {
 
 impl SingleFileBufferAllocator {
     
-    pub fn new(directory: &'static str) -> Result<SingleFileBufferAllocator> {
+    pub fn new(directory: &str) -> Result<SingleFileBufferAllocator> {
         let filename = format!("{}/{}", directory.to_string(), "file_buffer.data".to_string());
         let file = File::create(&filename)?;
         Ok(SingleFileBufferAllocator {

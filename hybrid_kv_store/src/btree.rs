@@ -427,7 +427,7 @@ pub struct BTree {
 
 impl BTree {
 
-    pub fn new(directory: &'static str, options: BTreeOptions) -> Result<BTree> {
+    pub fn new(directory: &str, options: BTreeOptions) -> Result<BTree> {
         // Create directory if not exists
         create_dir_all(directory)?;
 

@@ -1,5 +1,8 @@
 extern crate rand;
 
+use std::fs;
+use std::path::Path;
+
 use btree::{BTree, BTreeOptions};
 use lsmtree::LSMTree;
 use kvstore::KVStore;
@@ -7,12 +10,14 @@ use kvstore::KVStore;
 use self::rand::{thread_rng, Rng};
 use self::rand::seq::SliceRandom;
 
-fn make_btree() -> BTree {
-    BTree::new("test_bt", BTreeOptions::new()).unwrap()
+fn make_btree(name: &'static str) -> BTree {
+    let path_name = format!("bt_test_data/{}", name);
+    BTree::new(&path_name, BTreeOptions::new()).unwrap()
 }
 
-fn make_lsm() -> LSMTree {
-    LSMTree::new("test_lsm")
+fn make_lsm(name: &'static str) -> LSMTree {
+    let path_name = format!("lsm_test_data/{}", name);
+    LSMTree::new(&path_name)
 }
 
 fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>) {
@@ -76,17 +81,17 @@ mod test_btree {
     
     #[test]
     fn put() {
-        test_put(&mut make_btree());
+        test_put(&mut make_btree("put"));
     }
 
     #[test]
     fn update() {
-        test_update(&mut make_btree());
+        test_update(&mut make_btree("update"));
     }
 
     #[test]
     fn delete() {
-        test_delete(&mut make_btree());
+        test_delete(&mut make_btree("delete"));
     }
 }
 
@@ -96,16 +101,17 @@ mod test_lsm {
     
     #[test]
     fn put() {
-        test_put(&mut make_lsm());
+        test_put(&mut make_lsm("put"));
     }
 
     #[test]
     fn update() {
-        test_update(&mut make_lsm());
+        test_update(&mut make_lsm("update"));
     }
 
     #[test]
     fn delete() {
-        test_delete(&mut make_lsm());
+        test_delete(&mut make_lsm("delete"));
+        fs::remove_dir_all("test_lsm").unwrap();
     }
 }

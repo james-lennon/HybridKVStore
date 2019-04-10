@@ -170,7 +170,7 @@ pub struct LSMTree {
 
 impl LSMTree {
     
-    pub fn new(directory: &'static str) -> LSMTree {
+    pub fn new(directory: &str) -> LSMTree {
         // Create directory if not exists
         create_dir_all(directory).unwrap();
 
