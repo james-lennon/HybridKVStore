@@ -34,9 +34,7 @@ impl<T> AtomicDeque<T> where T: Clone {
     }
     
     pub fn push(&mut self, val: T) {
-        if self.len() >= self.buffer.len() {
-            panic!("Attempted to push into full atomic buffer; resizing not yet supported.");
-        }
+        assert!(self.len() < self.buffer.len());
         let old_end = self.end.load(Ordering::Acquire);
         self.buffer[old_end] = val;
         self.end.store((old_end + 1) % self.capacity(), Ordering::Release);

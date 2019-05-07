@@ -1,8 +1,8 @@
 use std::cell::{RefCell, UnsafeCell};
 use std::cmp::min;
 use std::collections::{BinaryHeap, HashSet};
-use std::fs::create_dir_all;
-use std::io::Result;
+use std::fs::{create_dir_all, File};
+use std::io::{Write, Result};
 use std::slice::Iter;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -48,12 +48,22 @@ fn merge_entries_into(entries1: &Vec<(i32, i32, bool)>, entries2: &Vec<(i32, i32
             break;
         }
     }
-    // println!("\nMERGING\n{:?}\nand\n{:?}\n=>\n{:?}", entries1, entries2, result);
 }
 
 
+fn search_levels(levels:&Vec<Run>, key: i32) -> Option<i32> {
+    for run in levels {
+        match run.search(key) {
+            SearchResult::Found(val) => return Some(val),
+            SearchResult::NotFound => (),
+            SearchResult::Deleted => return None,
+        };
+    }
+    None
+}
 
-#[derive(Debug)]
+
+#[derive(Debug, PartialEq)]
 enum SearchResult {
     Found(i32),
     NotFound,
@@ -138,6 +148,7 @@ impl Run {
 
     fn write_all(&mut self, entries: &Vec<(i32, i32, bool)>) {
         assert!(entries.len() <= self.capacity);
+        let mut bloom = self.bloom_filter.borrow_mut();
         // println!("writing...");
         for i in 0..entries.len() {
             self.disk_location.write_int((i * ENTRY_SIZE) as u64, entries[i].0).unwrap();
@@ -145,9 +156,8 @@ impl Run {
             let byte = if entries[i].2 { 1 } else { 0 };
             self.disk_location.write_byte((i * ENTRY_SIZE + 5) as u64, byte).unwrap();
 
-            // println!("wrote {}", entries[i].0);
             // Add to bloom
-            self.bloom_filter.borrow_mut().add(&entries[i].0);
+            bloom.add(&entries[i].0);
             // Add fences
             if i > 0 && i % ENTRIES_PER_PAGE == 0 {
                 self.fences.push(entries[i].0);
@@ -274,20 +284,19 @@ impl LSMTree {
         btree
     }
 
-    fn search_buffer(&self, key: i32) -> Option<i32> {
+    fn search_buffer(&self, key: i32) -> SearchResult {
         let buffer = unsafe { &*self.buffer.get() };
-        let mut result = None;
-        for i in 0..buffer.len() {
+        for i in (0..buffer.len()).rev() {
             if buffer[i].0 == key {
                 if buffer[i].2 {
                     // delete if tombstone record
-                    result = None;
+                    return SearchResult::Deleted;
                 } else {
-                    result = Some(buffer[i].1);
+                    return SearchResult::Found(buffer[i].1);
                 }
             }
         }
-        result
+        SearchResult::NotFound
     }
 
     fn start_buffer_thread(&self) {
@@ -330,7 +339,7 @@ impl LSMTree {
                     // If keys are the same, only keep most recent entry
                     if remove_bit_vec.get(i) {
                         offset += 1;
-                    } else {
+                    } else if offset > 0 {
                         sorted_buffer[i - offset] = sorted_buffer[i];
                     }
                     i += 1;
@@ -393,11 +402,18 @@ impl LSMTree {
 
                     level += 1;
                 }
-
                 levels_ptr.store(Box::into_raw(Box::new(new_levels)), Ordering::Release);
                 buffer.drop_first(num_read);
             }
         });
+    }
+
+    fn push_to_buffer(&mut self, key: i32, val: i32, deleted: bool) {
+        let mut buffer = unsafe { &mut *self.buffer.get() };
+        while buffer.len() == constants::BUFFER_CAPACITY {
+            // Spin until thread empties buffer
+        }
+        buffer.push((key, val, deleted));
     }
 
 }
@@ -406,36 +422,24 @@ impl LSMTree {
 impl KVStore for LSMTree {
     
     fn get(&mut self, key : i32) -> Option<i32> {
-        // println!("searching for {}", key);
-        // println!("{:?}", unsafe {&*self.buffer.get()});
         match self.search_buffer(key) {
-            Some(val) => Some(val),
-            None => {
+            SearchResult::Found(val) => {
+                Some(val)
+            },
+            SearchResult::Deleted => None,
+            SearchResult::NotFound => {
                 let levels = unsafe { &*self.levels.load(Ordering::Relaxed) };
-                for run in levels {
-                    match run.search(key) {
-                        SearchResult::Found(val) => return Some(val),
-                        SearchResult::NotFound => (),
-                        SearchResult::Deleted => return None,
-                    };
-                }
-                None
+                search_levels(levels, key)
             }
         }
     }
 
     fn delete(&mut self, key: i32) {
-        // Append a tombstone record
-        unsafe { &mut *self.buffer.get() }.push((key, 0, true));
+        self.push_to_buffer(key, 0, true)
     }
 
     fn put(&mut self, key : i32, val : i32) {
-        let mut buffer = unsafe { &mut *self.buffer.get() };
-
-        while buffer.len() == constants::BUFFER_CAPACITY {
-            // Spin until thread empties buffer
-        }
-        buffer.push((key, val, false));
+        self.push_to_buffer(key, val, false)
     }
 
     fn scan(&self, low : i32, high : i32) -> Vec<i32> {

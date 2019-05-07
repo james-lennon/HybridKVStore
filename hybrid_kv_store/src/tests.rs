@@ -112,6 +112,5 @@ mod test_lsm {
     #[test]
     fn delete() {
         test_delete(&mut make_lsm("delete"));
-        fs::remove_dir_all("test_lsm").unwrap();
     }
 }
