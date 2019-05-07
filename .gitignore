@@ -11,4 +11,6 @@ Cargo.lock
 
 # Target dir
 /hybrid_kv_store/target/*
+# Test data
+/hybrid_kv_store/*_data/
 
