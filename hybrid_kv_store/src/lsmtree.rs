@@ -27,26 +27,26 @@ fn merge_entries_into(entries1: &Vec<(i32, i32, bool)>, entries2: &Vec<(i32, i32
 
     let mut a = 0;
     let mut b = 0;
-    loop {
-        
-        // Populate with entries from entries1
-        while a < entries1.len() && (b >= entries2.len() || entries1[a].0 < entries2[b].0) {
+
+    while a < entries1.len() && b < entries2.len() {
+        if entries1[a].0 < entries2[b].0 {
             result.push(entries1[a]);
             a += 1;
-        }
-        // Populate with entries from entries2
-        while b < entries2.len() && (a >= entries1.len() || entries2[b].0 <= entries1[a].0) {
-            // Overwrite entries from first vector with entries of second vector if same key
-            if a < entries1.len() && entries2[b].0 == entries1[a].0 {
-                a += 1;
-            }
+        } else if entries1[a].0 == entries2[b].0 {
+            a += 1;
+        } else {
             result.push(entries2[b]);
             b += 1;
         }
+    }
 
-        if a >= entries1.len() && b >= entries2.len() {
-            break;
-        }
+    while a < entries1.len() {
+        result.push(entries1[a]);
+        a += 1;
+    }
+    while b < entries2.len() {
+        result.push(entries2[b]);
+        b += 1;
     }
 }
 
@@ -333,18 +333,18 @@ impl LSMTree {
                     }
                 }
 
-                let mut offset = 0;
-                i = 0;
-                while i < sorted_buffer.len() - offset {
-                    // If keys are the same, only keep most recent entry
-                    if remove_bit_vec.get(i) {
-                        offset += 1;
-                    } else if offset > 0 {
-                        sorted_buffer[i - offset] = sorted_buffer[i];
+                let mut write_pt = 0;
+                for read_pt in 0..sorted_buffer.len() {
+                    // Only write if not overwritten
+                    if !remove_bit_vec.get(read_pt) {
+                        // Sinc it's in-place, we only have to overwrite when there's an offset
+                        if write_pt != read_pt {
+                            sorted_buffer[write_pt] = sorted_buffer[read_pt];
+                        }
+                        write_pt += 1;
                     }
-                    i += 1;
                 }
-                sorted_buffer.truncate(i);
+                sorted_buffer.truncate(write_pt);
 
                 sorted_buffer.sort();
 
@@ -444,6 +444,15 @@ impl KVStore for LSMTree {
 
     fn scan(&self, low : i32, high : i32) -> Vec<i32> {
         Vec::new()
+    }
+
+    fn debug_lookup(&mut self, key: i32) {
+        let levels = unsafe { &*self.levels.load(Ordering::Relaxed) };
+        for i in 0..levels.len() {
+            let run = &levels[i];
+            let lookup_result = run.search(key);
+            println!("Level {}: {:?}", i, lookup_result);
+        }
     }
 
 }

@@ -497,4 +497,8 @@ impl KVStore for BTree {
     fn scan(&self, low : i32, high : i32) -> Vec<i32> {
         vec![0, 1, 2, 3]
     }
+
+    fn debug_lookup(&mut self, key: i32) {
+        // Unimplemented
+    }
 }
