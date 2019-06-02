@@ -15,9 +15,10 @@ use constants;
 use disk_allocator::{DiskAllocator, SingleFileBufferAllocator};
 use disk_location::DiskLocation;
 use kvstore::KVStore;
+// use merge_executor::MergeExecutor;
 
 
-const ENTRY_SIZE: usize = (4 + 4 + 1);
+pub const ENTRY_SIZE: usize = (4 + 4 + 1);
 const ENTRIES_PER_PAGE: usize = constants::PAGE_SIZE / ENTRY_SIZE;
 
 
@@ -70,9 +71,9 @@ enum SearchResult {
     Deleted,
 }
 
-enum MergeSource<'a> {
+enum MergeSource<'a, T> where T: DiskLocation {
     Buffer(Iter<'a, (i32, i32, bool)>),
-    Disk(DiskLocation),
+    Disk(Arc<T>),
 }
 
 #[derive(Debug)]
@@ -82,8 +83,8 @@ enum MergeResult {
 }
 
 #[derive(Clone, Debug)]
-struct Run {
-    disk_location: DiskLocation,
+pub struct Run {
+    disk_location: Arc<DiskLocation>,
     size: usize,
     capacity: usize,
     bloom_filter: Arc<RefCell<BloomFilter>>,
@@ -92,7 +93,7 @@ struct Run {
 
 impl Run {
 
-    fn new(disk_location: DiskLocation, capacity: usize) -> Run {
+    pub fn new(disk_location: Arc<DiskLocation>, capacity: usize) -> Run {
         Run {
             disk_location: disk_location,
             size: 0,
@@ -102,7 +103,7 @@ impl Run {
         }
     }
 
-    fn search(&self, key: i32) -> SearchResult {
+    pub fn search(&self, key: i32) -> SearchResult {
         // println!("searching bloom...");
         if !self.bloom_filter.borrow_mut().get(&key) {
             // println!("\tnot found");
@@ -134,7 +135,7 @@ impl Run {
         return SearchResult::NotFound;
     }
 
-    fn read_all(&self) -> Vec<(i32, i32, bool)> {
+    pub fn read_all(&self) -> Vec<(i32, i32, bool)> {
         assert!(self.size <= self.capacity);
         let mut result = Vec::with_capacity(self.size);
         for i in 0..self.size {
@@ -146,7 +147,7 @@ impl Run {
         result
     }
 
-    fn write_all(&mut self, entries: &Vec<(i32, i32, bool)>) {
+    pub fn write_all(&mut self, entries: &Vec<(i32, i32, bool)>) {
         assert!(entries.len() <= self.capacity);
         let mut bloom = self.bloom_filter.borrow_mut();
         // println!("writing...");
@@ -213,6 +214,7 @@ impl LSMTree {
 
         // TODO: disable flushing here
         let mut levels = unsafe { &*self.levels.load(Ordering::Acquire) };
+        let mut disk_locations = Vec::with_capacity(levels.len());
         for i in 0..levels.len() {
             let run = &levels[i];
             if run.size == 0 {
@@ -220,26 +222,28 @@ impl LSMTree {
             }
 
             let first_key = run.disk_location.read_int(0).unwrap();
-            heap.push((-first_key, i, 0, run.size, &run.disk_location));
+            heap.push((-first_key, i, 0, run.size));
+            disk_locations.push(&run.disk_location);
         }
 
         while heap.len() > 0 {
-            let (key, run_index, offset, size, disk_location) = heap.pop().unwrap();
+            let (key, run_index, offset, size) = heap.pop().unwrap();
+            let disk_location = disk_locations[run_index];
             let mut should_apply = true;
 
             // To ensure proper merging, skip this entry if there is a more recent
             // entry on the heap.  Otherwise, remove older entries.
             loop {
                 match heap.peek() {
-                    Some(&(peek_key, peek_run_index, peek_offset, peek_size, peek_disk_location)) => {
+                    Some(&(peek_key, peek_run_index, peek_offset, peek_size)) => {
                         if (key == peek_key) {
                             if (peek_run_index > run_index) {
                                 heap.pop();
                                 if peek_offset < peek_size - 1 {
                                     // Re-insert next entry
-                                    let next_key = peek_disk_location
+                                    let next_key = disk_locations[peek_run_index]
                                         .read_int(((peek_offset + 1) * ENTRY_SIZE) as u64).unwrap();
-                                    heap.push((next_key, peek_run_index, peek_offset + 1, peek_size, peek_disk_location));
+                                    heap.push((next_key, peek_run_index, peek_offset + 1, peek_size));
                                 }
                             } else {
                                 should_apply = false;
@@ -257,7 +261,7 @@ impl LSMTree {
                 // Re-insert next entry
                 let next_key = disk_location
                     .read_int(((offset + 1) * ENTRY_SIZE) as u64).unwrap();
-                heap.push((next_key, run_index, offset + 1, size, disk_location));
+                heap.push((next_key, run_index, offset + 1, size));
             }
 
             if !should_apply {
@@ -303,8 +307,10 @@ impl LSMTree {
         let buffer = unsafe { &mut *self.buffer.get() };
         let levels_ptr = Arc::clone(&self.levels);
         let disk_allocator_ptr = Arc::clone(&self.disk_allocator);
+        // let mut merge_executor = MergeExecutor::new(Arc::clone(&mut self.buffer), levels_ptr, disk_allocator_ptr);
 
         thread::spawn(move || {
+            // merge_executor.start_merge_loop();
             loop {
                 let mut sorted_buffer = Vec::with_capacity(constants::BUFFER_CAPACITY);
                 buffer.clone_contents_into(&mut sorted_buffer);
@@ -361,7 +367,7 @@ impl LSMTree {
                     let capacity = constants::BUFFER_CAPACITY * ((constants::TREE_RATIO).pow((level + 1) as u32));
                     if level >= levels.len() {
                         let disk_location = disk_allocator.allocate(ENTRY_SIZE * capacity).unwrap();
-                        let mut new_run = Run::new(disk_location, capacity);
+                        let mut new_run = Run::new(Arc::new(disk_location), capacity);
                         buffer_to_merge =
                             match buffer_to_merge {
                                 Some(buf) => {
@@ -383,7 +389,7 @@ impl LSMTree {
                                     merge_entries_into(&levels[level].read_all(), &buf, &mut new_buf);
 
                                     let disk_location = disk_allocator.allocate(ENTRY_SIZE * capacity).unwrap();
-                                    let mut new_run = Run::new(disk_location, capacity);
+                                    let mut new_run = Run::new(Arc::new(disk_location), capacity);
                                     let mut new_buffer_to_merge = None;
                                     if new_buf.len() <= capacity {
                                         new_run.write_all(&new_buf);

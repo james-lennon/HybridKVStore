@@ -1,10 +1,11 @@
 use std::io::Result;
 use std::fs::File;
-use disk_location::DiskLocation;
+use std::sync::Arc;
+use disk_location::{DiskLocation, ContiguousDiskLocation};
 
 
 pub trait DiskAllocator {
-    fn allocate(&mut self, size: usize) -> Result<DiskLocation>;
+    fn allocate(&mut self, size: usize) -> Result<ContiguousDiskLocation>;
 }
 
 
@@ -29,10 +30,10 @@ impl SingleFileBufferAllocator {
 
 impl DiskAllocator for SingleFileBufferAllocator {
 
-    fn allocate(&mut self, size: usize) -> Result<DiskLocation> {
+    fn allocate(&mut self, size: usize) -> Result<ContiguousDiskLocation> {
         let prev_offset = self.cur_offset;
         self.cur_offset += size;
-        Ok(DiskLocation::new(&*self.filename, prev_offset as u64))
+        Ok(ContiguousDiskLocation::new(&*self.filename, prev_offset as u64))
     }
 
 }

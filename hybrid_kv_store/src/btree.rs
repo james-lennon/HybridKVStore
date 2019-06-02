@@ -14,7 +14,7 @@ use kvstore::KVStore;
 const ENTRY_SIZE : usize = (4 + 4 + 1);
 
 
-fn build_tree_from_run(disk_location: DiskLocation, fences: Vec<i32>,
+fn build_tree_from_run(disk_location: Arc<DiskLocation>, fences: Vec<i32>,
                        size: usize, disk_allocator: &Arc<Mutex<SingleFileBufferAllocator>>)
                        -> Box<IntermediateNode> {
     let mut cur_nodes = Vec::with_capacity(fences.len() + 1);
@@ -252,7 +252,7 @@ impl IntermediateNode {
 
 #[derive(Clone)]
 struct LeafNode {
-    location: DiskLocation,
+    location: Arc<DiskLocation>,
     allocator: Arc<Mutex<SingleFileBufferAllocator>>,
     size: usize,
     next: Option<Box<LeafNode>>,
@@ -261,7 +261,7 @@ struct LeafNode {
 
 impl LeafNode {
     
-    fn new(location: DiskLocation, allocator: Arc<Mutex<SingleFileBufferAllocator>>) -> LeafNode {
+    fn new(location: Arc<DiskLocation>, allocator: Arc<Mutex<SingleFileBufferAllocator>>) -> LeafNode {
         LeafNode {
             location: location,
             size: 0,
@@ -279,8 +279,8 @@ impl LeafNode {
         let loc2 = allocator.allocate(ENTRY_SIZE * constants::FANOUT)?;
         // let loc1 = DiskLocation::new(&"asdf".to_string(), 0);
         // let loc2 = DiskLocation::new(&"asdf".to_string(), 0);
-        let mut child1 = LeafNode::new(loc1, Arc::clone(&self.allocator));
-        let mut child2 = LeafNode::new(loc2, Arc::clone(&self.allocator));
+        let mut child1 = LeafNode::new(Arc::new(loc1), Arc::clone(&self.allocator));
+        let mut child2 = LeafNode::new(Arc::new(loc2), Arc::clone(&self.allocator));
         let mut fence = 0;
 
         for i in 0..constants::FANOUT {
@@ -440,7 +440,7 @@ impl BTree {
         })
     }
 
-    pub fn from_disk_location(disk_location: DiskLocation, fences: Vec<i32>, size: usize,
+    pub fn from_disk_location(disk_location: Arc<DiskLocation>, fences: Vec<i32>, size: usize,
                               disk_allocator: Arc<Mutex<SingleFileBufferAllocator>>, options: BTreeOptions) -> BTree {
         let root = build_tree_from_run(disk_location, fences, size, &disk_allocator);
         BTree {
@@ -457,7 +457,7 @@ impl BTree {
     fn allocate_leaf_node(&mut self) -> Result<LeafNode> {
         let mut disk_allocator = self.disk_allocator.lock().unwrap();
         let location = disk_allocator.allocate(ENTRY_SIZE * constants::FANOUT)?;
-        Ok(LeafNode::new(location, Arc::clone(&self.disk_allocator)))
+        Ok(LeafNode::new(Arc::new(location), Arc::clone(&self.disk_allocator)))
     }
 
 }
