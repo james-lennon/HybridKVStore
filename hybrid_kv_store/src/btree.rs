@@ -11,12 +11,15 @@ use kvstore::KVStore;
 
 
 /* Each BTree entry will contain one unused byte at end to be compatible with LSM-Tree */
-const ENTRY_SIZE : usize = (4 + 4 + 1);
+const ENTRY_SIZE: usize = (4 + 4 + 1);
 
 
-fn build_tree_from_run(disk_location: Arc<DiskLocation>, fences: Vec<i32>,
-                       size: usize, disk_allocator: &Arc<Mutex<SingleFileBufferAllocator>>)
-                       -> Box<IntermediateNode> {
+fn build_tree_from_run(
+    disk_location: Arc<DiskLocation>,
+    fences: Vec<i32>,
+    size: usize,
+    disk_allocator: &Arc<Mutex<SingleFileBufferAllocator>>,
+) -> Box<IntermediateNode> {
     let mut cur_nodes = Vec::with_capacity(fences.len() + 1);
     let entry_size = 4 + 4 + 1;
     let leaf_bytes = constants::FANOUT * entry_size;
@@ -114,7 +117,6 @@ struct IntermediateNode {
  * Note: we maintain that `keys.len()` is equal to `children.len() - 1`.
  */
 impl IntermediateNode {
-
     fn new() -> IntermediateNode {
         IntermediateNode {
             keys: Vec::with_capacity(constants::FANOUT),
@@ -160,11 +162,11 @@ impl IntermediateNode {
                 BTreeNode::Intermediate(ref mut node) => {
                     node.delete(key)?;
                     is_child_empty = node.children.len() == 0
-                },
+                }
                 BTreeNode::Leaf(ref mut node) => {
                     node.delete(key)?;
                     is_child_empty = node.size == 0
-                },
+                }
             };
         }
         // Remove child if necessary
@@ -188,17 +190,33 @@ impl IntermediateNode {
         let mut child1 = IntermediateNode::new();
         let mut child2 = IntermediateNode::new();
 
-        child1.children.extend_from_slice(&self.children[0..constants::FANOUT / 2]);
-        child2.children.extend_from_slice(&self.children[constants::FANOUT / 2..constants::FANOUT]);
+        child1.children.extend_from_slice(
+            &self.children[0..constants::FANOUT / 2],
+        );
+        child2.children.extend_from_slice(
+            &self.children[constants::FANOUT / 2..
+                               constants::FANOUT],
+        );
 
-        child1.keys.extend_from_slice(&self.keys[0..(constants::FANOUT / 2 - 1)]);
-        child2.keys.extend_from_slice(&self.keys[(constants::FANOUT / 2)..constants::FANOUT - 1]);
+        child1.keys.extend_from_slice(
+            &self.keys[0..(constants::FANOUT / 2 - 1)],
+        );
+        child2.keys.extend_from_slice(
+            &self.keys[(constants::FANOUT / 2)..
+                           constants::FANOUT - 1],
+        );
 
         let new_fence = self.keys[constants::FANOUT / 2 - 1];
         (child1, child2, new_fence)
     }
 
-    fn insert_children(&mut self, child1: BTreeNode, child2: BTreeNode, new_fence: i32, index: usize) {
+    fn insert_children(
+        &mut self,
+        child1: BTreeNode,
+        child2: BTreeNode,
+        new_fence: i32,
+        index: usize,
+    ) {
         // Update children
         self.children[index] = child1;
         self.children.insert(index + 1, child2);
@@ -206,22 +224,17 @@ impl IntermediateNode {
         // Update fence pointers
         self.keys.insert(index, new_fence);
     }
-    
+
     fn insert(&mut self, key: i32, val: i32) -> Result<InsertResult> {
         let mut index = 0;
         let mut insert_result = InsertResult::NoSplit;
         {
             let (child, i) = self.find_child(key);
             index = i;
-            insert_result =
-                match *child {
-                    BTreeNode::Intermediate(ref mut node) => {
-                        node.insert(key, val)?
-                    },
-                    BTreeNode::Leaf(ref mut node) => {
-                        node.insert(key, val)?
-                    },
-                };
+            insert_result = match *child {
+                BTreeNode::Intermediate(ref mut node) => node.insert(key, val)?,
+                BTreeNode::Leaf(ref mut node) => node.insert(key, val)?,
+            };
         }
         match insert_result {
             InsertResult::NoSplit => Ok(InsertResult::NoSplit),
@@ -232,21 +245,27 @@ impl IntermediateNode {
                     if index < constants::FANOUT / 2 {
                         c1.insert_children(child1, child2, new_fence, index);
                     } else {
-                        c2.insert_children(child1, child2, new_fence, index - (constants::FANOUT / 2));
+                        c2.insert_children(
+                            child1,
+                            child2,
+                            new_fence,
+                            index - (constants::FANOUT / 2),
+                        );
                     }
 
-                    Ok(InsertResult::Split(BTreeNode::Intermediate(Box::new(c1)),
-                                           BTreeNode::Intermediate(Box::new(c2)),
-                                           return_fence))
+                    Ok(InsertResult::Split(
+                        BTreeNode::Intermediate(Box::new(c1)),
+                        BTreeNode::Intermediate(Box::new(c2)),
+                        return_fence,
+                    ))
                 } else {
                     // Add new children
                     self.insert_children(child1, child2, new_fence, index);
                     Ok(InsertResult::NoSplit)
                 }
-            },
+            }
         }
     }
-
 }
 
 
@@ -260,8 +279,10 @@ struct LeafNode {
 }
 
 impl LeafNode {
-    
-    fn new(location: Arc<DiskLocation>, allocator: Arc<Mutex<SingleFileBufferAllocator>>) -> LeafNode {
+    fn new(
+        location: Arc<DiskLocation>,
+        allocator: Arc<Mutex<SingleFileBufferAllocator>>,
+    ) -> LeafNode {
         LeafNode {
             location: location,
             size: 0,
@@ -291,8 +312,16 @@ impl LeafNode {
                 child1.location.write_int((ENTRY_SIZE * i) as u64, key)?;
                 child1.location.write_int((ENTRY_SIZE * i + 4) as u64, val)?;
             } else {
-                child2.location.write_int((ENTRY_SIZE * (i - constants::FANOUT / 2)) as u64, key)?;
-                child2.location.write_int((ENTRY_SIZE * (i - constants::FANOUT / 2) + 4) as u64, val)?;
+                child2.location.write_int(
+                    (ENTRY_SIZE * (i - constants::FANOUT / 2)) as
+                        u64,
+                    key,
+                )?;
+                child2.location.write_int(
+                    (ENTRY_SIZE * (i - constants::FANOUT / 2) +
+                         4) as u64,
+                    val,
+                )?;
             }
             // Save new fence key
             if i == constants::FANOUT / 2 {
@@ -315,7 +344,8 @@ impl LeafNode {
             Ok(InsertResult::Split(
                 BTreeNode::Leaf(Box::new(c1)),
                 BTreeNode::Leaf(Box::new(c2)),
-                f))
+                f,
+            ))
         } else {
             let mut i = 0;
             // Scan for insertion point
@@ -339,14 +369,20 @@ impl LeafNode {
                 let tmp_key = self.location.read_int((ENTRY_SIZE * i) as u64)?;
                 let tmp_val = self.location.read_int((ENTRY_SIZE * i + 4) as u64)?;
                 self.location.write_int((ENTRY_SIZE * i) as u64, next_key)?;
-                self.location.write_int((ENTRY_SIZE * i + 4) as u64, next_val)?;
+                self.location.write_int(
+                    (ENTRY_SIZE * i + 4) as u64,
+                    next_val,
+                )?;
                 next_key = tmp_key;
                 next_val = tmp_val;
                 i += 1;
             }
             // Write last entry without reading to prevent error
             self.location.write_int((ENTRY_SIZE * i) as u64, next_key)?;
-            self.location.write_int((ENTRY_SIZE * i + 4) as u64, next_val)?;
+            self.location.write_int(
+                (ENTRY_SIZE * i + 4) as u64,
+                next_val,
+            )?;
             // Update size
             self.size += 1;
             Ok(InsertResult::NoSplit)
@@ -367,14 +403,17 @@ impl LeafNode {
             i += 1;
         }
         if !found {
-            return Ok(())
+            return Ok(());
         }
         // Rewrite entries to apply deletion
         while i < (self.size - 1) {
             let tmp_key = self.location.read_int((ENTRY_SIZE * (i + 1)) as u64)?;
             let tmp_val = self.location.read_int((ENTRY_SIZE * (i + 1) + 4) as u64)?;
             self.location.write_int((ENTRY_SIZE * i) as u64, tmp_key)?;
-            self.location.write_int((ENTRY_SIZE * i + 4) as u64, tmp_val)?;
+            self.location.write_int(
+                (ENTRY_SIZE * i + 4) as u64,
+                tmp_val,
+            )?;
             i += 1;
         }
         // Update size
@@ -395,7 +434,6 @@ impl LeafNode {
         }
         Ok(None)
     }
-
 }
 
 
@@ -411,11 +449,9 @@ pub struct BTreeOptions {
 }
 
 impl BTreeOptions {
-
     pub fn new() -> BTreeOptions {
-        BTreeOptions { }
+        BTreeOptions {}
     }
-
 }
 
 
@@ -426,7 +462,6 @@ pub struct BTree {
 }
 
 impl BTree {
-
     pub fn new(directory: &str, options: BTreeOptions) -> Result<BTree> {
         // Create directory if not exists
         create_dir_all(directory)?;
@@ -440,8 +475,13 @@ impl BTree {
         })
     }
 
-    pub fn from_disk_location(disk_location: Arc<DiskLocation>, fences: Vec<i32>, size: usize,
-                              disk_allocator: Arc<Mutex<SingleFileBufferAllocator>>, options: BTreeOptions) -> BTree {
+    pub fn from_disk_location(
+        disk_location: Arc<DiskLocation>,
+        fences: Vec<i32>,
+        size: usize,
+        disk_allocator: Arc<Mutex<SingleFileBufferAllocator>>,
+        options: BTreeOptions,
+    ) -> BTree {
         let root = build_tree_from_run(disk_location, fences, size, &disk_allocator);
         BTree {
             disk_allocator: disk_allocator,
@@ -457,13 +497,14 @@ impl BTree {
     fn allocate_leaf_node(&mut self) -> Result<LeafNode> {
         let mut disk_allocator = self.disk_allocator.lock().unwrap();
         let location = disk_allocator.allocate(ENTRY_SIZE * constants::FANOUT)?;
-        Ok(LeafNode::new(Arc::new(location), Arc::clone(&self.disk_allocator)))
+        Ok(LeafNode::new(
+            Arc::new(location),
+            Arc::clone(&self.disk_allocator),
+        ))
     }
-
 }
 
 impl KVStore for BTree {
-    
     fn get(&mut self, key: i32) -> Option<i32> {
         self.root.lookup(key).unwrap()
     }
@@ -477,7 +518,9 @@ impl KVStore for BTree {
         if self.is_empty() {
             let mut leaf_node = self.allocate_leaf_node().unwrap();
             leaf_node.insert(key, val).unwrap();
-            self.root.children.push(BTreeNode::Leaf(Box::new(leaf_node)));
+            self.root.children.push(
+                BTreeNode::Leaf(Box::new(leaf_node)),
+            );
         } else {
             let insert_result = (*self.root).insert(key, val).unwrap();
             match insert_result {
@@ -489,12 +532,12 @@ impl KVStore for BTree {
 
                     new_root.keys.push(new_fence);
                     self.root = Box::new(new_root);
-                },
+                }
             }
         };
     }
 
-    fn scan(&self, low : i32, high : i32) -> Vec<i32> {
+    fn scan(&self, low: i32, high: i32) -> Vec<i32> {
         vec![0, 1, 2, 3]
     }
 

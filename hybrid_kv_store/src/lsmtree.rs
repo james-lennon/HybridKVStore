@@ -22,8 +22,11 @@ pub const ENTRY_SIZE: usize = (4 + 4 + 1);
 const ENTRIES_PER_PAGE: usize = constants::PAGE_SIZE / ENTRY_SIZE;
 
 
-fn merge_entries_into(entries1: &Vec<(i32, i32, bool)>, entries2: &Vec<(i32, i32, bool)>,
-                      result: &mut Vec<(i32, i32, bool)>) {
+fn merge_entries_into(
+    entries1: &Vec<(i32, i32, bool)>,
+    entries2: &Vec<(i32, i32, bool)>,
+    result: &mut Vec<(i32, i32, bool)>,
+) {
     result.clear();
 
     let mut a = 0;
@@ -52,7 +55,7 @@ fn merge_entries_into(entries1: &Vec<(i32, i32, bool)>, entries2: &Vec<(i32, i32
 }
 
 
-fn search_levels(levels:&Vec<Run>, key: i32) -> Option<i32> {
+fn search_levels(levels: &Vec<Run>, key: i32) -> Option<i32> {
     for run in levels {
         match run.search(key) {
             SearchResult::Found(val) => return Some(val),
@@ -71,7 +74,10 @@ enum SearchResult {
     Deleted,
 }
 
-enum MergeSource<'a, T> where T: DiskLocation {
+enum MergeSource<'a, T>
+where
+    T: DiskLocation,
+{
     Buffer(Iter<'a, (i32, i32, bool)>),
     Disk(Arc<T>),
 }
@@ -92,7 +98,6 @@ pub struct Run {
 }
 
 impl Run {
-
     pub fn new(disk_location: Arc<DiskLocation>, capacity: usize) -> Run {
         Run {
             disk_location: disk_location,
@@ -120,11 +125,17 @@ impl Run {
 
         // println!("{:?}", min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)));
         for j in 0..min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)) {
-            let read_key = self.disk_location.read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64).unwrap();
+            let read_key = self.disk_location
+                .read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64)
+                .unwrap();
             // println!("{:?} {}", read_key, key);
             if key == read_key {
-                let read_val = self.disk_location.read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE + 4) as u64).unwrap();
-                let deleted = self.disk_location.read_byte(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE + 4 + 1) as u64).unwrap();
+                let read_val = self.disk_location
+                    .read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE + 4) as u64)
+                    .unwrap();
+                let deleted = self.disk_location
+                    .read_byte(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE + 4 + 1) as u64)
+                    .unwrap();
                 if deleted == 1 {
                     return SearchResult::Deleted;
                 } else {
@@ -139,9 +150,15 @@ impl Run {
         assert!(self.size <= self.capacity);
         let mut result = Vec::with_capacity(self.size);
         for i in 0..self.size {
-            let key = self.disk_location.read_int((i * ENTRY_SIZE) as u64).unwrap();
-            let val = self.disk_location.read_int((i * ENTRY_SIZE + 4) as u64).unwrap();
-            let del = self.disk_location.read_byte((i * ENTRY_SIZE + 5) as u64).unwrap();
+            let key = self.disk_location
+                .read_int((i * ENTRY_SIZE) as u64)
+                .unwrap();
+            let val = self.disk_location
+                .read_int((i * ENTRY_SIZE + 4) as u64)
+                .unwrap();
+            let del = self.disk_location
+                .read_byte((i * ENTRY_SIZE + 5) as u64)
+                .unwrap();
             result.push((key, val, del == 1));
         }
         result
@@ -152,10 +169,16 @@ impl Run {
         let mut bloom = self.bloom_filter.borrow_mut();
         // println!("writing...");
         for i in 0..entries.len() {
-            self.disk_location.write_int((i * ENTRY_SIZE) as u64, entries[i].0).unwrap();
-            self.disk_location.write_int((i * ENTRY_SIZE + 4) as u64, entries[i].1).unwrap();
+            self.disk_location
+                .write_int((i * ENTRY_SIZE) as u64, entries[i].0)
+                .unwrap();
+            self.disk_location
+                .write_int((i * ENTRY_SIZE + 4) as u64, entries[i].1)
+                .unwrap();
             let byte = if entries[i].2 { 1 } else { 0 };
-            self.disk_location.write_byte((i * ENTRY_SIZE + 5) as u64, byte).unwrap();
+            self.disk_location
+                .write_byte((i * ENTRY_SIZE + 5) as u64, byte)
+                .unwrap();
 
             // Add to bloom
             bloom.add(&entries[i].0);
@@ -180,7 +203,6 @@ pub struct LSMTree {
 
 
 impl LSMTree {
-    
     pub fn new(directory: &str) -> LSMTree {
         // Create directory if not exists
         create_dir_all(directory).unwrap();
@@ -188,7 +210,10 @@ impl LSMTree {
         let disk_allocator = SingleFileBufferAllocator::new(directory).unwrap();
         let result = LSMTree {
             levels: Arc::new(AtomicPtr::new(Box::into_raw(Box::new(Vec::new())))),
-            buffer: Arc::new(UnsafeCell::new(AtomicDeque::with_capacity(constants::BUFFER_CAPACITY, (0,0,false)))),
+            buffer: Arc::new(UnsafeCell::new(AtomicDeque::with_capacity(
+                constants::BUFFER_CAPACITY,
+                (0, 0, false),
+            ))),
             disk_allocator: Arc::new(Mutex::new(disk_allocator)),
         };
         result.start_buffer_thread();
@@ -201,8 +226,13 @@ impl LSMTree {
         let last_index = levels.len() - 1;
         let last_run = levels.remove(last_index);
         let disk_allocator = &self.disk_allocator;
-        let mut btree = BTree::from_disk_location(last_run.disk_location, last_run.fences,
-                                last_run.size, Arc::clone(disk_allocator), BTreeOptions::new());
+        let mut btree = BTree::from_disk_location(
+            last_run.disk_location,
+            last_run.fences,
+            last_run.size,
+            Arc::clone(disk_allocator),
+            BTreeOptions::new(),
+        );
 
         self.levels.store(levels_ptr, Ordering::Release);
         btree
@@ -242,8 +272,11 @@ impl LSMTree {
                                 if peek_offset < peek_size - 1 {
                                     // Re-insert next entry
                                     let next_key = disk_locations[peek_run_index]
-                                        .read_int(((peek_offset + 1) * ENTRY_SIZE) as u64).unwrap();
-                                    heap.push((next_key, peek_run_index, peek_offset + 1, peek_size));
+                                        .read_int(((peek_offset + 1) * ENTRY_SIZE) as u64)
+                                        .unwrap();
+                                    heap.push(
+                                        (next_key, peek_run_index, peek_offset + 1, peek_size),
+                                    );
                                 }
                             } else {
                                 should_apply = false;
@@ -252,7 +285,7 @@ impl LSMTree {
                         } else {
                             break;
                         }
-                    },
+                    }
                     None => break,
                 };
             }
@@ -260,7 +293,8 @@ impl LSMTree {
             if offset < size - 1 {
                 // Re-insert next entry
                 let next_key = disk_location
-                    .read_int(((offset + 1) * ENTRY_SIZE) as u64).unwrap();
+                    .read_int(((offset + 1) * ENTRY_SIZE) as u64)
+                    .unwrap();
                 heap.push((next_key, run_index, offset + 1, size));
             }
 
@@ -268,8 +302,12 @@ impl LSMTree {
                 continue;
             }
 
-            let val = disk_location.read_int((ENTRY_SIZE * offset + 4) as u64).unwrap();
-            let is_deleted = disk_location.read_byte((ENTRY_SIZE * offset + 8) as u64).unwrap() == 1;
+            let val = disk_location
+                .read_int((ENTRY_SIZE * offset + 4) as u64)
+                .unwrap();
+            let is_deleted = disk_location
+                .read_byte((ENTRY_SIZE * offset + 8) as u64)
+                .unwrap() == 1;
 
             // Apply entry
             if is_deleted {
@@ -364,46 +402,46 @@ impl LSMTree {
                     if level >= levels.len() && buffer_to_merge.is_none() {
                         break;
                     }
-                    let capacity = constants::BUFFER_CAPACITY * ((constants::TREE_RATIO).pow((level + 1) as u32));
+                    let capacity = constants::BUFFER_CAPACITY *
+                        ((constants::TREE_RATIO).pow((level + 1) as u32));
                     if level >= levels.len() {
                         let disk_location = disk_allocator.allocate(ENTRY_SIZE * capacity).unwrap();
                         let mut new_run = Run::new(Arc::new(disk_location), capacity);
-                        buffer_to_merge =
-                            match buffer_to_merge {
-                                Some(buf) => {
-                                    if buf.len() <= capacity {
-                                        new_run.write_all(&buf);
-                                        None
-                                    } else {
-                                        Some(buf)
-                                    }
-                                },
-                                None => panic!("impossible"),
-                            };
+                        buffer_to_merge = match buffer_to_merge {
+                            Some(buf) => {
+                                if buf.len() <= capacity {
+                                    new_run.write_all(&buf);
+                                    None
+                                } else {
+                                    Some(buf)
+                                }
+                            }
+                            None => panic!("impossible"),
+                        };
                         new_levels.push(new_run);
                     } else {
-                        buffer_to_merge =
-                            match buffer_to_merge {
-                                Some(buf) => {
-                                    let mut new_buf = Vec::new();
-                                    merge_entries_into(&levels[level].read_all(), &buf, &mut new_buf);
+                        buffer_to_merge = match buffer_to_merge {
+                            Some(buf) => {
+                                let mut new_buf = Vec::new();
+                                merge_entries_into(&levels[level].read_all(), &buf, &mut new_buf);
 
-                                    let disk_location = disk_allocator.allocate(ENTRY_SIZE * capacity).unwrap();
-                                    let mut new_run = Run::new(Arc::new(disk_location), capacity);
-                                    let mut new_buffer_to_merge = None;
-                                    if new_buf.len() <= capacity {
-                                        new_run.write_all(&new_buf);
-                                    } else {
-                                        new_buffer_to_merge = Some(new_buf);
-                                    }
-                                    new_levels.push(new_run);
-                                    new_buffer_to_merge
-                                },
-                                None => {
-                                    new_levels.push(levels[level].clone());
-                                    None
-                                },
+                                let disk_location =
+                                    disk_allocator.allocate(ENTRY_SIZE * capacity).unwrap();
+                                let mut new_run = Run::new(Arc::new(disk_location), capacity);
+                                let mut new_buffer_to_merge = None;
+                                if new_buf.len() <= capacity {
+                                    new_run.write_all(&new_buf);
+                                } else {
+                                    new_buffer_to_merge = Some(new_buf);
+                                }
+                                new_levels.push(new_run);
+                                new_buffer_to_merge
                             }
+                            None => {
+                                new_levels.push(levels[level].clone());
+                                None
+                            }
+                        }
                     }
 
                     level += 1;
@@ -421,17 +459,13 @@ impl LSMTree {
         }
         buffer.push((key, val, deleted));
     }
-
 }
 
 
 impl KVStore for LSMTree {
-    
-    fn get(&mut self, key : i32) -> Option<i32> {
+    fn get(&mut self, key: i32) -> Option<i32> {
         match self.search_buffer(key) {
-            SearchResult::Found(val) => {
-                Some(val)
-            },
+            SearchResult::Found(val) => Some(val),
             SearchResult::Deleted => None,
             SearchResult::NotFound => {
                 let levels = unsafe { &*self.levels.load(Ordering::Relaxed) };
@@ -444,11 +478,11 @@ impl KVStore for LSMTree {
         self.push_to_buffer(key, 0, true)
     }
 
-    fn put(&mut self, key : i32, val : i32) {
+    fn put(&mut self, key: i32, val: i32) {
         self.push_to_buffer(key, val, false)
     }
 
-    fn scan(&self, low : i32, high : i32) -> Vec<i32> {
+    fn scan(&self, low: i32, high: i32) -> Vec<i32> {
         Vec::new()
     }
 
@@ -460,5 +494,4 @@ impl KVStore for LSMTree {
             println!("Level {}: {:?}", i, lookup_result);
         }
     }
-
 }

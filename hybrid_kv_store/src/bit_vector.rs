@@ -12,10 +12,9 @@ fn vector_bit_positions(index: usize) -> (usize, usize) {
 }
 
 impl BitVector {
-    
     pub fn new(size: usize) -> BitVector {
         let mut data = Vec::with_capacity(size);
-        for _ in 0 .. size {
+        for _ in 0..size {
             data.push(0);
         }
         BitVector {
@@ -43,12 +42,11 @@ impl BitVector {
 #[derive(Clone, Debug)]
 pub struct BloomFilter {
     bit_vector: BitVector,
-    count: usize
+    count: usize,
 }
 
 
 impl BloomFilter {
-    
     pub fn new(capacity: usize) -> BloomFilter {
         BloomFilter {
             bit_vector: BitVector::new(capacity),
@@ -74,7 +72,7 @@ impl BloomFilter {
 
     pub fn clear(&mut self) {
         if self.count > 0 {
-            for i in 0 .. self.bit_vector.size {
+            for i in 0..self.bit_vector.size {
                 self.bit_vector.data[i] = 0;
             }
         }

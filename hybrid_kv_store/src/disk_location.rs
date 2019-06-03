@@ -70,7 +70,6 @@ pub struct ContiguousDiskLocation {
 }
 
 impl ContiguousDiskLocation {
-    
     pub fn new(filename: &String, offset: u64) -> ContiguousDiskLocation {
         ContiguousDiskLocation {
             filename: filename.clone(),
@@ -101,11 +100,9 @@ impl ContiguousDiskLocation {
     pub fn get_offset(&self) -> u64 {
         self.offset
     }
-
 }
 
 impl DiskLocation for ContiguousDiskLocation {
-
     fn read_int(&self, offset: u64) -> io::Result<i32> {
         let mut file = File::open(&self.filename)?;
         read_int_from_file(&mut file, offset + self.offset)
@@ -119,13 +116,17 @@ impl DiskLocation for ContiguousDiskLocation {
 
 
     fn write_int(&self, offset: u64, value: i32) -> io::Result<()> {
-        let mut file = OpenOptions::new().write(true).read(true).open(&self.filename)?;
+        let mut file = OpenOptions::new().write(true).read(true).open(
+            &self.filename,
+        )?;
         write_int_to_file(&mut file, offset + self.offset, value)
     }
 
 
     fn write_byte(&self, offset: u64, value: u8) -> io::Result<()> {
-        let mut file = OpenOptions::new().write(true).read(true).open(&self.filename)?;
+        let mut file = OpenOptions::new().write(true).read(true).open(
+            &self.filename,
+        )?;
         write_byte_to_file(&mut file, offset + self.offset, value)
     }
 
@@ -143,9 +144,7 @@ impl PartialEq for ContiguousDiskLocation {
     }
 }
 
-impl Eq for ContiguousDiskLocation {
-    
-}
+impl Eq for ContiguousDiskLocation {}
 
 impl PartialOrd for ContiguousDiskLocation {
     fn partial_cmp(&self, rhs: &ContiguousDiskLocation) -> Option<Ordering> {
@@ -156,5 +155,26 @@ impl PartialOrd for ContiguousDiskLocation {
 impl Ord for ContiguousDiskLocation {
     fn cmp(&self, rhs: &ContiguousDiskLocation) -> Ordering {
         Ordering::Equal
+    }
+}
+
+
+#[derive(Debug)]
+struct FragmentedDiskLocation {
+    fences: Vec<(i32, Arc<DiskLocation>)>,
+}
+
+impl FragmentedDiskLocation {
+    pub fn new(
+        fragment_fences: Vec<i32>,
+        disk_locations: Vec<Arc<DiskLocation>>,
+    ) -> FragmentedDiskLocation {
+        let mut fences = Vec::new();
+
+        for i in 0..fragment_fences.len() {
+            // TODO: implement
+        }
+
+        FragmentedDiskLocation { fences: fences }
     }
 }
