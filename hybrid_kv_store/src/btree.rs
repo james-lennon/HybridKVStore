@@ -1,4 +1,6 @@
 use std::boxed::Box;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::vec::Vec;
 use std::io::Result;
 use std::fs::create_dir_all;
@@ -33,14 +35,14 @@ fn build_tree_from_run(
         } else {
             leaf_node.size = constants::FANOUT;
         }
-        cur_nodes.push(BTreeNode::Leaf(Box::new(leaf_node)));
+        cur_nodes.push(BTreeNode::Leaf(Rc::new(RefCell::new(leaf_node))));
     }
 
     if fences.len() == 0 {
         let leaf_disk_location = disk_location.clone();
         let mut leaf_node = LeafNode::new(leaf_disk_location, Arc::clone(disk_allocator));
         leaf_node.size = size;
-        cur_nodes.push(BTreeNode::Leaf(Box::new(leaf_node)));
+        cur_nodes.push(BTreeNode::Leaf(Rc::new(RefCell::new(leaf_node))));
     }
 
     let mut cur_fences = fences;
@@ -144,7 +146,7 @@ impl IntermediateNode {
         let (child, _) = self.find_child(key);
         match *child {
             BTreeNode::Intermediate(ref mut node) => node.lookup(key),
-            BTreeNode::Leaf(ref mut node) => node.lookup(key),
+            BTreeNode::Leaf(ref mut node) => node.borrow_mut().lookup(key),
         }
     }
 
@@ -164,8 +166,9 @@ impl IntermediateNode {
                     is_child_empty = node.children.len() == 0
                 }
                 BTreeNode::Leaf(ref mut node) => {
-                    node.delete(key)?;
-                    is_child_empty = node.size == 0
+                    let mut node_ref = node.borrow_mut();
+                    node_ref.delete(key)?;
+                    is_child_empty = node_ref.size == 0
                 }
             };
         }
@@ -233,7 +236,7 @@ impl IntermediateNode {
             index = i;
             insert_result = match *child {
                 BTreeNode::Intermediate(ref mut node) => node.insert(key, val)?,
-                BTreeNode::Leaf(ref mut node) => node.insert(key, val)?,
+                BTreeNode::Leaf(ref mut node) => node.borrow_mut().insert(key, val)?,
             };
         }
         match insert_result {
@@ -274,8 +277,8 @@ struct LeafNode {
     location: Arc<DiskLocation>,
     allocator: Arc<Mutex<SingleFileBufferAllocator>>,
     size: usize,
-    next: Option<Box<LeafNode>>,
-    prev: Option<Box<LeafNode>>,
+    next: Option<Rc<RefCell<LeafNode>>>,
+    prev: Option<Rc<RefCell<LeafNode>>>,
 }
 
 impl LeafNode {
@@ -292,7 +295,7 @@ impl LeafNode {
         }
     }
 
-    fn split(&mut self) -> Result<(LeafNode, LeafNode, i32)> {
+    fn split(&mut self) -> Result<(Rc<RefCell<LeafNode>>, Rc<RefCell<LeafNode>>, i32)> {
         assert_eq!(self.size, constants::FANOUT);
 
         let mut allocator = self.allocator.lock().unwrap();
@@ -300,50 +303,65 @@ impl LeafNode {
         let loc2 = allocator.allocate(ENTRY_SIZE * constants::FANOUT)?;
         // let loc1 = DiskLocation::new(&"asdf".to_string(), 0);
         // let loc2 = DiskLocation::new(&"asdf".to_string(), 0);
-        let mut child1 = LeafNode::new(Arc::new(loc1), Arc::clone(&self.allocator));
-        let mut child2 = LeafNode::new(Arc::new(loc2), Arc::clone(&self.allocator));
-        let mut fence = 0;
+        let child1 = Rc::new(RefCell::new(LeafNode::new(Arc::new(loc1), Arc::clone(&self.allocator))));
+        let child2 = Rc::new(RefCell::new(LeafNode::new(Arc::new(loc2), Arc::clone(&self.allocator))));
 
-        for i in 0..constants::FANOUT {
-            let key = self.location.read_int((ENTRY_SIZE * i) as u64)?;
-            let val = self.location.read_int((ENTRY_SIZE * i + 4) as u64)?;
-            // Write to selected partition
-            if i < constants::FANOUT / 2 {
-                child1.location.write_int((ENTRY_SIZE * i) as u64, key)?;
-                child1.location.write_int((ENTRY_SIZE * i + 4) as u64, val)?;
-            } else {
-                child2.location.write_int(
-                    (ENTRY_SIZE * (i - constants::FANOUT / 2)) as
-                        u64,
-                    key,
-                )?;
-                child2.location.write_int(
-                    (ENTRY_SIZE * (i - constants::FANOUT / 2) +
-                         4) as u64,
-                    val,
-                )?;
+        let mut fence = 0;
+        {
+            let mut child1_ref = child1.borrow_mut();
+            let mut child2_ref = child2.borrow_mut();
+
+            /* Set up next and prev pointers */
+            child1_ref.prev = self.prev.clone();
+            child1_ref.next = Some(child2.clone());
+            child2_ref.prev = Some(child1.clone());
+            child2_ref.next = self.next.clone();
+
+            for i in 0..constants::FANOUT {
+                let key = self.location.read_int((ENTRY_SIZE * i) as u64)?;
+                let val = self.location.read_int((ENTRY_SIZE * i + 4) as u64)?;
+                // Write to selected partition
+                if i < constants::FANOUT / 2 {
+                    child1_ref.location.write_int((ENTRY_SIZE * i) as u64, key)?;
+                    child1_ref.location.write_int((ENTRY_SIZE * i + 4) as u64, val)?;
+                } else {
+                    child2_ref.location.write_int(
+                        (ENTRY_SIZE * (i - constants::FANOUT / 2)) as
+                            u64,
+                        key,
+                    )?;
+                    child2_ref.location.write_int(
+                        (ENTRY_SIZE * (i - constants::FANOUT / 2) +
+                             4) as u64,
+                        val,
+                    )?;
+                }
+                // Save new fence key
+                if i == constants::FANOUT / 2 {
+                    fence = key;
+                }
             }
-            // Save new fence key
-            if i == constants::FANOUT / 2 {
-                fence = key;
-            }
+            child1_ref.size = constants::FANOUT / 2;
+            child2_ref.size = constants::FANOUT - (constants::FANOUT / 2);
         }
-        child1.size = constants::FANOUT / 2;
-        child2.size = constants::FANOUT - (constants::FANOUT / 2);
         Ok((child1, child2, fence))
     }
 
     fn insert(&mut self, key: i32, val: i32) -> Result<InsertResult> {
         if self.size == constants::FANOUT {
             let (mut c1, mut c2, f) = self.split()?;
-            if key < f {
-                c1.insert(key, val)?;
-            } else {
-                c2.insert(key, val)?;
+            {
+                let mut c1_ref = c1.borrow_mut();
+                let mut c2_ref = c2.borrow_mut();
+                if key < f {
+                    c1_ref.insert(key, val)?;
+                } else {
+                    c2_ref.insert(key, val)?;
+                }
             }
             Ok(InsertResult::Split(
-                BTreeNode::Leaf(Box::new(c1)),
-                BTreeNode::Leaf(Box::new(c2)),
+                BTreeNode::Leaf(c1),
+                BTreeNode::Leaf(c2),
                 f,
             ))
         } else {
@@ -440,7 +458,7 @@ impl LeafNode {
 #[derive(Clone)]
 enum BTreeNode {
     Intermediate(Box<IntermediateNode>),
-    Leaf(Box<LeafNode>),
+    Leaf(Rc<RefCell<LeafNode>>),
 }
 
 
@@ -519,7 +537,7 @@ impl KVStore for BTree {
             let mut leaf_node = self.allocate_leaf_node().unwrap();
             leaf_node.insert(key, val).unwrap();
             self.root.children.push(
-                BTreeNode::Leaf(Box::new(leaf_node)),
+                BTreeNode::Leaf(Rc::new(RefCell::new(leaf_node))),
             );
         } else {
             let insert_result = (*self.root).insert(key, val).unwrap();
