@@ -113,11 +113,11 @@ struct IntermediateNode {
     children: Vec<BTreeNode>,
 }
 
-/**
+#[doc = "
  * An intermediate node of the B-Tree. Fence pointers, stored in `keys`,
  * contain the *lowest* value in the corresponding child's keys.
  * Note: we maintain that `keys.len()` is equal to `children.len() - 1`.
- */
+ "]
 impl IntermediateNode {
     fn new() -> IntermediateNode {
         IntermediateNode {
@@ -303,8 +303,12 @@ impl LeafNode {
         let loc2 = allocator.allocate(ENTRY_SIZE * constants::FANOUT)?;
         // let loc1 = DiskLocation::new(&"asdf".to_string(), 0);
         // let loc2 = DiskLocation::new(&"asdf".to_string(), 0);
-        let child1 = Rc::new(RefCell::new(LeafNode::new(Arc::new(loc1), Arc::clone(&self.allocator))));
-        let child2 = Rc::new(RefCell::new(LeafNode::new(Arc::new(loc2), Arc::clone(&self.allocator))));
+        let child1 = Rc::new(RefCell::new(
+            LeafNode::new(Arc::new(loc1), Arc::clone(&self.allocator)),
+        ));
+        let child2 = Rc::new(RefCell::new(
+            LeafNode::new(Arc::new(loc2), Arc::clone(&self.allocator)),
+        ));
 
         let mut fence = 0;
         {
@@ -323,7 +327,10 @@ impl LeafNode {
                 // Write to selected partition
                 if i < constants::FANOUT / 2 {
                     child1_ref.location.write_int((ENTRY_SIZE * i) as u64, key)?;
-                    child1_ref.location.write_int((ENTRY_SIZE * i + 4) as u64, val)?;
+                    child1_ref.location.write_int(
+                        (ENTRY_SIZE * i + 4) as u64,
+                        val,
+                    )?;
                 } else {
                     child2_ref.location.write_int(
                         (ENTRY_SIZE * (i - constants::FANOUT / 2)) as
@@ -536,9 +543,9 @@ impl KVStore for BTree {
         if self.is_empty() {
             let mut leaf_node = self.allocate_leaf_node().unwrap();
             leaf_node.insert(key, val).unwrap();
-            self.root.children.push(
-                BTreeNode::Leaf(Rc::new(RefCell::new(leaf_node))),
-            );
+            self.root.children.push(BTreeNode::Leaf(
+                Rc::new(RefCell::new(leaf_node)),
+            ));
         } else {
             let insert_result = (*self.root).insert(key, val).unwrap();
             match insert_result {

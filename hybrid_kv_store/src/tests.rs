@@ -10,6 +10,9 @@ use kvstore::KVStore;
 use self::rand::{thread_rng, Rng};
 use self::rand::seq::SliceRandom;
 
+const N_VALS : usize = 10_000;
+
+
 fn make_btree(name: &'static str) -> BTree {
     let path_name = format!("bt_test_data/{}", name);
     BTree::new(&path_name, BTreeOptions::new()).unwrap()
@@ -35,7 +38,7 @@ fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>) {
 }
 
 fn test_put(store: &mut KVStore) {
-    let max_val = 10_000;
+    let max_val = N_VALS;
     let (keys, vals) = rand_init_store(store, max_val);
 
     let mut lookup_idx: Vec<usize> = (0..max_val as usize).collect();
@@ -55,7 +58,7 @@ fn test_update(store: &mut KVStore) {
 }
 
 fn test_delete(store: &mut KVStore) {
-    let max_val = 10_000;
+    let max_val = N_VALS;
     let (keys, vals) = rand_init_store(store, max_val);
 
     let mut is_deleted = Vec::with_capacity(max_val);

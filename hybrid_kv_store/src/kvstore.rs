@@ -1,7 +1,7 @@
-/**
+#[doc = "
  * A trait describing the methods a KVStore must implement. To be implemented
  * for B-Tree, LSM-Tree, and Hybrid data stores.
- */
+ "]
 pub trait KVStore {
     fn get(&mut self, key: i32) -> Option<i32>;
     fn delete(&mut self, key: i32);

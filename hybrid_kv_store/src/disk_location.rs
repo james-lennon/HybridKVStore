@@ -172,9 +172,11 @@ impl DiskLocation for FragmentedDiskLocation {
     fn read_int(&self, offset: u64) -> Result<i32> {
         let index = self.fragment_for_offset(offset);
         let disk_location = &self.disk_locations[index];
-        let read_offset =
-            if index > 0 { offset - self.offset_fences[index - 1]}
-            else { offset };
+        let read_offset = if index > 0 {
+            offset - self.offset_fences[index - 1]
+        } else {
+            offset
+        };
         disk_location.read_int(read_offset)
     }
 
@@ -182,9 +184,11 @@ impl DiskLocation for FragmentedDiskLocation {
     fn read_byte(&self, offset: u64) -> Result<u8> {
         let index = self.fragment_for_offset(offset);
         let disk_location = &self.disk_locations[index];
-        let read_offset =
-            if index > 0 { offset - self.offset_fences[index - 1]}
-            else { offset };
+        let read_offset = if index > 0 {
+            offset - self.offset_fences[index - 1]
+        } else {
+            offset
+        };
         disk_location.read_byte(read_offset)
     }
 
