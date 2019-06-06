@@ -220,6 +220,28 @@ impl LSMTree {
         result
     }
 
+    pub fn from_run(base_run: Run, directory: &str) -> LSMTree {
+        let mut disk_allocator = SingleFileBufferAllocator::new(directory).unwrap();
+        let mut cur_capacity = constants::BUFFER_CAPACITY * constants::TREE_RATIO;
+        let mut levels = Vec::new();
+        while cur_capacity < base_run.capacity {
+            levels.push(Run::new(Arc::new(disk_allocator.allocate(0).unwrap()), 0));
+
+            cur_capacity *= constants::TREE_RATIO;
+        }
+        levels.push(base_run);
+
+        let mut result = LSMTree {
+            levels: Arc::new(AtomicPtr::new(Box::into_raw(Box::new(levels)))),
+            buffer: Arc::new(UnsafeCell::new(AtomicDeque::with_capacity(
+                constants::BUFFER_CAPACITY,
+                (0, 0, false)))),
+            disk_allocator: Arc::new(Mutex::new(disk_allocator)),
+        };
+        result.start_buffer_thread();
+        result
+    }
+
     fn lowest_level_into_btree(&mut self) -> BTree {
         let levels_ptr = self.levels.load(Ordering::Acquire);
         let mut levels = unsafe { &mut *levels_ptr };

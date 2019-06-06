@@ -140,7 +140,7 @@ impl DiskLocation for ContiguousDiskLocation {
 
 
 #[derive(Debug)]
-struct FragmentedDiskLocation {
+pub struct FragmentedDiskLocation {
     offset_fences: Vec<u64>,
     disk_locations: Vec<Arc<DiskLocation>>,
 }

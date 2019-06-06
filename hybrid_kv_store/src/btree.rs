@@ -7,9 +7,10 @@ use std::fs::create_dir_all;
 use std::sync::{Arc, Mutex};
 
 use constants;
-use disk_location::DiskLocation;
+use disk_location::{DiskLocation, FragmentedDiskLocation};
 use disk_allocator::{DiskAllocator, SingleFileBufferAllocator};
 use kvstore::KVStore;
+use lsmtree::{LSMTree, Run};
 
 
 /* Each BTree entry will contain one unused byte at end to be compatible with LSM-Tree */
@@ -527,6 +528,49 @@ impl BTree {
             Arc::clone(&self.disk_allocator),
         ))
     }
+
+    pub fn into_lsm_tree(self, directory: &str) -> LSMTree {
+        /* Find lowest left leaf node */
+        let mut cur_node = BTreeNode::Intermediate(self.root);
+        loop {
+            cur_node = match cur_node {
+                BTreeNode::Intermediate(node) => node.children[0].clone(),
+                BTreeNode::Leaf(node) => BTreeNode::Leaf(node),
+            }
+        }
+
+        let mut cur_offset : u64 = 0;
+        let mut disk_locations = Vec::new();
+        let mut offset_fences = Vec::new();
+        let mut cur_leaf = match cur_node {
+            BTreeNode::Leaf(node) => Some(node),
+            _ => None,
+        };
+
+        loop {
+            match cur_leaf {
+                Some(node) => {
+                    let mut node_ref = node.borrow_mut();
+                    disk_locations.push(node_ref.location.clone());
+                    cur_offset += node_ref.size as u64;
+                    offset_fences.push(cur_offset);
+                    cur_leaf = node_ref.next.clone();
+                },
+                None => break,
+            }
+        }
+
+        // Remove last fence because it's unnecessary
+        let new_len = offset_fences.len() - 1;
+        offset_fences.truncate(new_len);
+
+        let frag_location = Arc::new(FragmentedDiskLocation::new(
+            offset_fences,
+            disk_locations,
+            ));
+        let base_level = Run::new(frag_location, cur_offset as usize);
+        LSMTree::from_run(base_level, directory);
+    }
 }
 
 impl KVStore for BTree {
@@ -537,7 +581,6 @@ impl KVStore for BTree {
     fn delete(&mut self, key: i32) -> () {
         self.root.delete(key).unwrap();
     }
-
 
     fn put(&mut self, key: i32, val: i32) -> () {
         if self.is_empty() {
