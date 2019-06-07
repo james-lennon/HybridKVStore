@@ -57,6 +57,7 @@ fn merge_entries_into(
 
 fn search_levels(levels: &Vec<Run>, key: i32) -> Option<i32> {
     for run in levels {
+        println!("searching level...");
         match run.search(key) {
             SearchResult::Found(val) => return Some(val),
             SearchResult::NotFound => (),
@@ -124,7 +125,13 @@ impl Run {
         }
 
         // println!("{:?}", min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)));
-        for j in 0..min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)) {
+        let max_idx =
+            if i * ENTRIES_PER_PAGE > self.size || i * ENTRIES_PER_PAGE > ENTRIES_PER_PAGE {
+                min(ENTRIES_PER_PAGE, self.size)
+            } else {
+                (self.size - i * ENTRIES_PER_PAGE)
+            };
+        for j in 0..max_idx {
             let read_key = self.disk_location
                 .read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64)
                 .unwrap();
@@ -189,6 +196,21 @@ impl Run {
         }
         self.size = entries.len();
     }
+
+    pub fn construct_bloom_and_fences(&mut self) {
+        let mut bloom = self.bloom_filter.borrow_mut();
+        for i in 0 .. self.capacity {
+            let key = self.disk_location
+                .read_int((i * ENTRY_SIZE) as u64)
+                .unwrap();
+            println!("adding {:?}", key);
+
+            bloom.add(&key);
+            if i > 0 && i % ENTRIES_PER_PAGE == 0 {
+                self.fences.push(key);
+            }
+        }
+    }
 }
 
 
@@ -221,6 +243,8 @@ impl LSMTree {
     }
 
     pub fn from_run(base_run: Run, directory: &str) -> LSMTree {
+        // Create directory if not exists
+        create_dir_all(directory).unwrap();
         let mut disk_allocator = SingleFileBufferAllocator::new(directory).unwrap();
         let mut cur_capacity = constants::BUFFER_CAPACITY * constants::TREE_RATIO;
         let mut levels = Vec::new();
@@ -235,7 +259,8 @@ impl LSMTree {
             levels: Arc::new(AtomicPtr::new(Box::into_raw(Box::new(levels)))),
             buffer: Arc::new(UnsafeCell::new(AtomicDeque::with_capacity(
                 constants::BUFFER_CAPACITY,
-                (0, 0, false)))),
+                (0, 0, false),
+            ))),
             disk_allocator: Arc::new(Mutex::new(disk_allocator)),
         };
         result.start_buffer_thread();

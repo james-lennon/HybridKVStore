@@ -10,7 +10,7 @@ use kvstore::KVStore;
 use self::rand::{thread_rng, Rng};
 use self::rand::seq::SliceRandom;
 
-const N_VALS : usize = 10_000;
+const N_VALS: usize = 10_000;
 
 
 fn make_btree(name: &'static str) -> BTree {
@@ -30,7 +30,7 @@ fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>) {
     keys.shuffle(&mut rng);
     vals.shuffle(&mut rng);
 
-    for i in 0 .. size {
+    for i in 0..size {
         store.put(keys[i], vals[i]);
     }
 
@@ -62,7 +62,7 @@ fn test_delete(store: &mut KVStore) {
     let (keys, vals) = rand_init_store(store, max_val);
 
     let mut is_deleted = Vec::with_capacity(max_val);
-    for i in 0 .. max_val {
+    for i in 0..max_val {
         let delete = thread_rng().gen_bool(0.5);
         is_deleted.push(delete);
 
@@ -72,7 +72,7 @@ fn test_delete(store: &mut KVStore) {
         }
     }
 
-    for i in 0 .. max_val {
+    for i in 0..max_val {
         let expected = if !is_deleted[i] { Some(vals[i]) } else { None };
         assert_eq!(store.get(keys[i]), expected);
     }
@@ -81,7 +81,7 @@ fn test_delete(store: &mut KVStore) {
 #[cfg(test)]
 mod test_btree {
     use super::*;
-    
+
     #[test]
     fn put() {
         test_put(&mut make_btree("put"));
@@ -96,12 +96,32 @@ mod test_btree {
     fn delete() {
         test_delete(&mut make_btree("delete"));
     }
+
+    #[test]
+    fn into_lsm() {
+        let mut btree = make_btree("btree_to_lsm_1");
+        println!("Initializing btree...");
+        let (keys, vals) = rand_init_store(&mut btree, N_VALS);
+        println!("Transitioning to LSM...");
+        let mut lsm = btree.into_lsm_tree("btree_to_lsm_2");
+        println!("Verifying...");
+        for i in 0 .. keys.len() {
+            assert_eq!(lsm.get(keys[i]), Some(vals[i]));
+            println!("Good");
+        }
+
+        // Overwrite keys and values to make sure updates work
+        let (keys2, vals2) = rand_init_store(&mut lsm, N_VALS);
+        for i in 0 .. keys2.len() {
+            assert_eq!(lsm.get(keys2[i]), Some(vals2[i]));
+        }
+    }
 }
 
 #[cfg(test)]
 mod test_lsm {
     use super::*;
-    
+
     #[test]
     fn put() {
         test_put(&mut make_lsm("put"));

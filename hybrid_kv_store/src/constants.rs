@@ -1,7 +1,7 @@
 
 /* Disk Page size, in bytes */
-// pub const PAGE_SIZE: usize = 356 * 9;
-pub const PAGE_SIZE: usize = 3 * 9;
+pub const PAGE_SIZE: usize = 356 * 9;
+// pub const PAGE_SIZE: usize = 3 * 9;
 
 
 /* B-Tree Constants */

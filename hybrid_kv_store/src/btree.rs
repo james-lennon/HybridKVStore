@@ -533,13 +533,18 @@ impl BTree {
         /* Find lowest left leaf node */
         let mut cur_node = BTreeNode::Intermediate(self.root);
         loop {
-            cur_node = match cur_node {
-                BTreeNode::Intermediate(node) => node.children[0].clone(),
-                BTreeNode::Leaf(node) => BTreeNode::Leaf(node),
+            match cur_node {
+                BTreeNode::Intermediate(node) => {
+                    cur_node = node.children[0].clone();
+                },
+                BTreeNode::Leaf(node) => {
+                    cur_node = BTreeNode::Leaf(node);
+                    break;
+                },
             }
         }
 
-        let mut cur_offset : u64 = 0;
+        let mut cur_offset: u64 = 0;
         let mut disk_locations = Vec::new();
         let mut offset_fences = Vec::new();
         let mut cur_leaf = match cur_node {
@@ -551,11 +556,14 @@ impl BTree {
             match cur_leaf {
                 Some(node) => {
                     let mut node_ref = node.borrow_mut();
+                    println!("{:?}", node_ref.prev.is_none());
                     disk_locations.push(node_ref.location.clone());
-                    cur_offset += node_ref.size as u64;
+                    cur_offset += (node_ref.size * ENTRY_SIZE) as u64;
+                    println!("node size = {:?}", node_ref.size);
+                    println!("offset: {:?}", cur_offset);
                     offset_fences.push(cur_offset);
                     cur_leaf = node_ref.next.clone();
-                },
+                }
                 None => break,
             }
         }
@@ -564,12 +572,10 @@ impl BTree {
         let new_len = offset_fences.len() - 1;
         offset_fences.truncate(new_len);
 
-        let frag_location = Arc::new(FragmentedDiskLocation::new(
-            offset_fences,
-            disk_locations,
-            ));
-        let base_level = Run::new(frag_location, cur_offset as usize);
-        LSMTree::from_run(base_level, directory);
+        let frag_location = Arc::new(FragmentedDiskLocation::new(offset_fences, disk_locations));
+        let mut base_level = Run::new(frag_location, cur_offset as usize);
+        base_level.construct_bloom_and_fences();
+        LSMTree::from_run(base_level, directory)
     }
 }
 

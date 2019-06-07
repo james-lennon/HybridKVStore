@@ -163,6 +163,7 @@ impl FragmentedDiskLocation {
             if offset < self.offset_fences[index] {
                 break;
             }
+            index += 1;
         }
         index
     }

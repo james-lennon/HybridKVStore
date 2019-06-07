@@ -17,14 +17,15 @@ use kvstore::KVStore;
 
 
 fn main() {
-    let mut bt = BTree::new("bt_data", BTreeOptions::new()).unwrap();
-    println!("Successfully created B-Tree");
-    test_kvstore(&mut bt);
-    let mut lsm = LSMTree::new("lsm_data");
-    println!("Successfully created LSM-Tree");
-    test_kvstore(&mut lsm);
-    println!("Testing transition to B-Tree");
-    test_transition_to_btree(lsm);
+    // into_lsm();
+    // let mut bt = BTree::new("bt_data", BTreeOptions::new()).unwrap();
+    // println!("Successfully created B-Tree");
+    // test_kvstore(&mut bt);
+    // let mut lsm = LSMTree::new("lsm_data");
+    // println!("Successfully created LSM-Tree");
+    // test_kvstore(&mut lsm);
+    // println!("Testing transition to B-Tree");
+    // test_transition_to_btree(lsm);
 }
 
 fn test_kvstore(store: &mut KVStore) {
