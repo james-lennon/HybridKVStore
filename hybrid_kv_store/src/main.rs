@@ -17,6 +17,13 @@ use kvstore::KVStore;
 
 
 fn main() {
+    let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
+    btree.put(1, 1);
+    btree.put(2, 2);
+    btree.put(3, 3);
+    btree.put(4, 4);
+    btree.put(5, 5);
+    btree.debug_print();
     // into_lsm();
     // let mut bt = BTree::new("bt_data", BTreeOptions::new()).unwrap();
     // println!("Successfully created B-Tree");

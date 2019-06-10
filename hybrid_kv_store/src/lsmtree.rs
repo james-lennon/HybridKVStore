@@ -115,6 +115,9 @@ impl Run {
             // println!("\tnot found");
             return SearchResult::NotFound;
         }
+        if self.size == 0 {
+            return SearchResult::NotFound;
+        }
         let num_fences = ((self.size as f64 / ENTRIES_PER_PAGE as f64).ceil() - 1.0) as usize;
         let mut i = 0;
         while i < num_fences {

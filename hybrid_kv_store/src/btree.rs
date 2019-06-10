@@ -1,3 +1,5 @@
+extern crate rand;
+
 use std::boxed::Box;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -5,6 +7,7 @@ use std::vec::Vec;
 use std::io::Result;
 use std::fs::create_dir_all;
 use std::sync::{Arc, Mutex};
+use self::rand::{thread_rng, Rng};
 
 use constants;
 use disk_location::{DiskLocation, FragmentedDiskLocation};
@@ -280,6 +283,7 @@ struct LeafNode {
     size: usize,
     next: Option<Rc<RefCell<LeafNode>>>,
     prev: Option<Rc<RefCell<LeafNode>>>,
+    id: u16,
 }
 
 impl LeafNode {
@@ -293,6 +297,7 @@ impl LeafNode {
             next: None,
             prev: None,
             allocator: allocator,
+            id: thread_rng().gen::<u16>(),
         }
     }
 
@@ -310,6 +315,16 @@ impl LeafNode {
         let child2 = Rc::new(RefCell::new(
             LeafNode::new(Arc::new(loc2), Arc::clone(&self.allocator)),
         ));
+
+        /* adjust next and previous references to this node */
+        match self.prev {
+            Some(ref node) => { node.borrow_mut().next = Some(child1.clone()); },
+            None => {},
+        }
+        match self.next {
+            Some(ref node) => { node.borrow_mut().prev = Some(child2.clone()); },
+            None => {},
+        }
 
         let mut fence = 0;
         {
@@ -530,11 +545,13 @@ impl BTree {
     }
 
     pub fn into_lsm_tree(self, directory: &str) -> LSMTree {
+        let mut last_inter_node = None;
         /* Find lowest left leaf node */
         let mut cur_node = BTreeNode::Intermediate(self.root);
         loop {
             match cur_node {
                 BTreeNode::Intermediate(node) => {
+                    last_inter_node = Some(node.clone());
                     cur_node = node.children[0].clone();
                 },
                 BTreeNode::Leaf(node) => {
@@ -543,6 +560,46 @@ impl BTree {
                 },
             }
         }
+
+        // DEBUG
+
+        // let mut last_inter_node = last_inter_node.unwrap();
+        // for i in 0..last_inter_node.children.len() {
+        //     let prev = 
+        //         if i > 0 {
+        //             Some(&last_inter_node.children[i-1])
+        //         } else {
+        //             None
+        //         };
+        //     let next = 
+        //         if i < last_inter_node.children.len() - 1 {
+        //             match last_inter_node.children[i+1] {
+        //                 BTreeNode::Intermediate(_) => panic!("Impossible"),
+        //                 BTreeNode::Leaf(ref node) => Some(node)
+        //             }
+        //         } else {
+        //             None
+        //         };
+        //     let child: &Rc<RefCell<LeafNode>> = match last_inter_node.children[i] {
+        //         BTreeNode::Intermediate(_) => panic!("Impossible"),
+        //         BTreeNode::Leaf(ref node) => node
+        //     };
+        //     let child_ref = child.borrow_mut();
+        //     println!("next in chain: {:?}", child_ref.next.is_none());
+        //     println!("next child: {:?}", next.is_none());
+        //     assert!(child_ref.next.is_none() == next.is_none());
+        //     if !next.is_none() {
+        //         let child_next = match child_ref.next {
+        //             Some(ref node) => node,
+        //             None => panic!("Impossible"),
+        //         };
+        //         assert!(Rc::ptr_eq(next.unwrap(), &child_next));
+        //     }
+        //     // assert_eq!(child.next, next);
+        //     // assert_eq!(child.prev, prev);
+        // }
+
+        // END DEBUG
 
         let mut cur_offset: u64 = 0;
         let mut disk_locations = Vec::new();
@@ -576,6 +633,45 @@ impl BTree {
         let mut base_level = Run::new(frag_location, cur_offset as usize);
         base_level.construct_bloom_and_fences();
         LSMTree::from_run(base_level, directory)
+    }
+
+    fn print_node(&self, node: &BTreeNode) {
+        println!("\n============================");
+        match node {
+            BTreeNode::Intermediate(ref int_node) => {
+                println!("INTERMEDIATE");
+                println!("{:?} children", int_node.children.len());
+                for ref f in &int_node.keys {
+                    println!("\t{:?}", f);
+                    println!("============================");
+                }
+                for ref c in &int_node.children {
+                    self.print_node(c);
+                }
+            },
+            BTreeNode::Leaf(ref leaf_node) => {
+                let leaf_node_ref = leaf_node.borrow_mut();
+                println!("LEAF {}", leaf_node_ref.id);
+                let next_id = match leaf_node_ref.next {
+                    Some(ref node) => Some(node.borrow_mut().id),
+                    None => None,
+                };
+                let prev_id = match leaf_node_ref.prev {
+                    Some(ref node) => Some(node.borrow_mut().id),
+                    None => None,
+                };
+                println!("prev: {:?}", prev_id);
+                println!("next: {:?}", next_id);
+                println!("============================");
+            },
+        }
+    }
+
+    pub fn debug_print(&self) {
+        for ref c in &self.root.children {
+            self.print_node(c)
+        }
+        // self.print_node(&BTreeNode::Intermediate(&self.root));
     }
 }
 
