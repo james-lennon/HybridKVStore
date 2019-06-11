@@ -13,4 +13,6 @@ Cargo.lock
 /hybrid_kv_store/target/*
 # Test data
 /hybrid_kv_store/*_data/
+/hybrid_kv_store/btree_to_lsm_*
+/hybrid_kv_store/lsm_to_btree*
 
