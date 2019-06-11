@@ -13,17 +13,17 @@ use self::rand::seq::SliceRandom;
 const N_VALS: usize = 10_000;
 
 
-fn make_btree(name: &'static str) -> BTree {
+pub fn make_btree(name: &'static str) -> BTree {
     let path_name = format!("bt_test_data/{}", name);
     BTree::new(&path_name, BTreeOptions::new()).unwrap()
 }
 
-fn make_lsm(name: &'static str) -> LSMTree {
+pub fn make_lsm(name: &'static str) -> LSMTree {
     let path_name = format!("lsm_test_data/{}", name);
     LSMTree::new(&path_name)
 }
 
-fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>) {
+pub fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>) {
     let mut keys: Vec<i32> = (0..size as i32).collect();
     let mut vals: Vec<i32> = (0..size as i32).collect();
     let mut rng = thread_rng();
@@ -31,7 +31,7 @@ fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>) {
     vals.shuffle(&mut rng);
 
     for i in 0..size {
-        println!("adding... {}", i);
+        // println!("adding... {}", i);
         store.put(keys[i], vals[i]);
     }
 
