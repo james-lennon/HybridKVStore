@@ -57,7 +57,7 @@ fn merge_entries_into(
 
 fn search_levels(levels: &Vec<Run>, key: i32) -> Option<i32> {
     for run in levels {
-        println!("searching level...");
+        // println!("searching level...");
         match run.search(key) {
             SearchResult::Found(val) => return Some(val),
             SearchResult::NotFound => (),
@@ -116,6 +116,7 @@ impl Run {
             return SearchResult::NotFound;
         }
         if self.size == 0 {
+            // println!("empty");
             return SearchResult::NotFound;
         }
         let num_fences = ((self.size as f64 / ENTRIES_PER_PAGE as f64).ceil() - 1.0) as usize;
@@ -202,11 +203,11 @@ impl Run {
 
     pub fn construct_bloom_and_fences(&mut self) {
         let mut bloom = self.bloom_filter.borrow_mut();
-        for i in 0 .. self.capacity {
+        self.size = self.capacity / ENTRY_SIZE;
+        for i in 0 .. self.size {
             let key = self.disk_location
                 .read_int((i * ENTRY_SIZE) as u64)
                 .unwrap();
-            println!("adding {:?}", key);
 
             bloom.add(&key);
             if i > 0 && i % ENTRIES_PER_PAGE == 0 {

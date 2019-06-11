@@ -24,6 +24,7 @@ fn main() {
     btree.put(4, 4);
     btree.put(5, 5);
     btree.debug_print();
+    let mut lsm = btree.into_lsm_tree("lsm_data");
     // into_lsm();
     // let mut bt = BTree::new("bt_data", BTreeOptions::new()).unwrap();
     // println!("Successfully created B-Tree");

@@ -307,8 +307,6 @@ impl LeafNode {
         let mut allocator = self.allocator.lock().unwrap();
         let loc1 = allocator.allocate(ENTRY_SIZE * constants::FANOUT)?;
         let loc2 = allocator.allocate(ENTRY_SIZE * constants::FANOUT)?;
-        // let loc1 = DiskLocation::new(&"asdf".to_string(), 0);
-        // let loc2 = DiskLocation::new(&"asdf".to_string(), 0);
         let child1 = Rc::new(RefCell::new(
             LeafNode::new(Arc::new(loc1), Arc::clone(&self.allocator)),
         ));
@@ -545,13 +543,11 @@ impl BTree {
     }
 
     pub fn into_lsm_tree(self, directory: &str) -> LSMTree {
-        let mut last_inter_node = None;
         /* Find lowest left leaf node */
         let mut cur_node = BTreeNode::Intermediate(self.root);
         loop {
             match cur_node {
                 BTreeNode::Intermediate(node) => {
-                    last_inter_node = Some(node.clone());
                     cur_node = node.children[0].clone();
                 },
                 BTreeNode::Leaf(node) => {
@@ -560,46 +556,6 @@ impl BTree {
                 },
             }
         }
-
-        // DEBUG
-
-        // let mut last_inter_node = last_inter_node.unwrap();
-        // for i in 0..last_inter_node.children.len() {
-        //     let prev = 
-        //         if i > 0 {
-        //             Some(&last_inter_node.children[i-1])
-        //         } else {
-        //             None
-        //         };
-        //     let next = 
-        //         if i < last_inter_node.children.len() - 1 {
-        //             match last_inter_node.children[i+1] {
-        //                 BTreeNode::Intermediate(_) => panic!("Impossible"),
-        //                 BTreeNode::Leaf(ref node) => Some(node)
-        //             }
-        //         } else {
-        //             None
-        //         };
-        //     let child: &Rc<RefCell<LeafNode>> = match last_inter_node.children[i] {
-        //         BTreeNode::Intermediate(_) => panic!("Impossible"),
-        //         BTreeNode::Leaf(ref node) => node
-        //     };
-        //     let child_ref = child.borrow_mut();
-        //     println!("next in chain: {:?}", child_ref.next.is_none());
-        //     println!("next child: {:?}", next.is_none());
-        //     assert!(child_ref.next.is_none() == next.is_none());
-        //     if !next.is_none() {
-        //         let child_next = match child_ref.next {
-        //             Some(ref node) => node,
-        //             None => panic!("Impossible"),
-        //         };
-        //         assert!(Rc::ptr_eq(next.unwrap(), &child_next));
-        //     }
-        //     // assert_eq!(child.next, next);
-        //     // assert_eq!(child.prev, prev);
-        // }
-
-        // END DEBUG
 
         let mut cur_offset: u64 = 0;
         let mut disk_locations = Vec::new();
@@ -613,11 +569,8 @@ impl BTree {
             match cur_leaf {
                 Some(node) => {
                     let mut node_ref = node.borrow_mut();
-                    println!("{:?}", node_ref.prev.is_none());
                     disk_locations.push(node_ref.location.clone());
                     cur_offset += (node_ref.size * ENTRY_SIZE) as u64;
-                    println!("node size = {:?}", node_ref.size);
-                    println!("offset: {:?}", cur_offset);
                     offset_fences.push(cur_offset);
                     cur_leaf = node_ref.next.clone();
                 }

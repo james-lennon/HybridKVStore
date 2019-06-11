@@ -31,6 +31,7 @@ fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>) {
     vals.shuffle(&mut rng);
 
     for i in 0..size {
+        println!("adding... {}", i);
         store.put(keys[i], vals[i]);
     }
 
@@ -106,13 +107,15 @@ mod test_btree {
         let mut lsm = btree.into_lsm_tree("btree_to_lsm_2");
         println!("Verifying...");
         for i in 0 .. keys.len() {
+            println!("testing key {} ({} of {})", keys[i], i, keys.len());
             assert_eq!(lsm.get(keys[i]), Some(vals[i]));
-            println!("Good");
         }
+        println!("overwriting ...");
 
         // Overwrite keys and values to make sure updates work
         let (keys2, vals2) = rand_init_store(&mut lsm, N_VALS);
         for i in 0 .. keys2.len() {
+            println!("overwriting {}", keys2[i]);
             assert_eq!(lsm.get(keys2[i]), Some(vals2[i]));
         }
     }
