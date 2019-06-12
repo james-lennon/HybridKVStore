@@ -15,17 +15,35 @@ use btree::{BTree, BTreeOptions};
 use lsmtree::LSMTree;
 use kvstore::KVStore;
 
+use tests::{test_delete, test_put, test_scan};
+
 
 fn main() {
-    let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
-    btree.put(1, 1);
-    btree.put(2, 2);
-    btree.put(3, 3);
-    btree.put(4, 4);
-    btree.put(5, 5);
-    btree.debug_print();
+    let mut lsm = LSMTree::new("lsm_data");
+    println!("put");
+    test_put(&mut lsm);
+    lsm = LSMTree::new("lsm_data");
+    println!("delete");
+    test_delete(&mut lsm);
+    lsm = LSMTree::new("lsm_data");
+    println!("scan");
+    test_scan(&mut lsm);
+    // let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
+    // loop {
+    //     lsm.put(1, 1);
+    //     lsm.put(2, 2);
+    //     lsm.put(3, 3);
+    //     lsm.put(4, 4);
+    //     lsm.put(5, 5);
+    //     lsm.put(11, 1);
+    //     lsm.put(12, 2);
+    //     lsm.put(13, 3);
+    //     lsm.put(14, 4);
+    //     lsm.put(15, 5);
+    // }
+    // btree.debug_print();
 
-    println!("{:?}", btree.scan(2, 5));
+    // println!("{:?}", btree.scan(2, 5));
 
     // let mut lsm = btree.into_lsm_tree("lsm_data");
 }

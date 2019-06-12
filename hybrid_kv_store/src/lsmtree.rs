@@ -5,8 +5,10 @@ use std::fs::{create_dir_all, File};
 use std::io::{Write, Result};
 use std::slice::Iter;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::thread;
+use std::rc::Rc;
+use std::ops::Drop;
 
 use atomic_deque::AtomicDeque;
 use bit_vector::{BloomFilter, BitVector};
@@ -225,6 +227,9 @@ pub struct LSMTree {
     /* A deque of (key, value, deleted) tuples */
     buffer: Arc<UnsafeCell<AtomicDeque<(i32, i32, bool)>>>,
     disk_allocator: Arc<Mutex<SingleFileBufferAllocator>>,
+    /* Manage thread */
+    should_merge: Arc<AtomicBool>,
+    join_handle: Option<Rc<thread::JoinHandle<()>>>,
 }
 
 
@@ -234,13 +239,15 @@ impl LSMTree {
         create_dir_all(directory).unwrap();
 
         let disk_allocator = SingleFileBufferAllocator::new(directory).unwrap();
-        let result = LSMTree {
+        let mut result = LSMTree {
             levels: Arc::new(AtomicPtr::new(Box::into_raw(Box::new(Vec::new())))),
             buffer: Arc::new(UnsafeCell::new(AtomicDeque::with_capacity(
                 constants::BUFFER_CAPACITY,
                 (0, 0, false),
             ))),
             disk_allocator: Arc::new(Mutex::new(disk_allocator)),
+            should_merge: Arc::new(AtomicBool::new(true)),
+            join_handle: None,
         };
         result.start_buffer_thread();
         result
@@ -266,6 +273,8 @@ impl LSMTree {
                 (0, 0, false),
             ))),
             disk_allocator: Arc::new(Mutex::new(disk_allocator)),
+            should_merge: Arc::new(AtomicBool::new(true)),
+            join_handle: None,
         };
         result.start_buffer_thread();
         result
@@ -392,15 +401,16 @@ impl LSMTree {
         SearchResult::NotFound
     }
 
-    fn start_buffer_thread(&self) {
+    fn start_buffer_thread(&mut self) {
         let buffer = unsafe { &mut *self.buffer.get() };
+        let should_merge = Arc::clone(&self.should_merge);
         let levels_ptr = Arc::clone(&self.levels);
         let disk_allocator_ptr = Arc::clone(&self.disk_allocator);
         // let mut merge_executor = MergeExecutor::new(Arc::clone(&mut self.buffer), levels_ptr, disk_allocator_ptr);
 
-        thread::spawn(move || {
+        let join_handle = thread::spawn(move || {
             // merge_executor.start_merge_loop();
-            loop {
+            while should_merge.load(Ordering::Relaxed) {
                 let mut sorted_buffer = Vec::with_capacity(constants::BUFFER_CAPACITY);
                 buffer.clone_contents_into(&mut sorted_buffer);
                 let num_read = sorted_buffer.len();
@@ -497,10 +507,13 @@ impl LSMTree {
 
                     level += 1;
                 }
-                levels_ptr.store(Box::into_raw(Box::new(new_levels)), Ordering::Release);
-                buffer.drop_first(num_read);
+                if should_merge.load(Ordering::Relaxed) {
+                    levels_ptr.store(Box::into_raw(Box::new(new_levels)), Ordering::Release);
+                    buffer.drop_first(num_read);
+                }
             }
         });
+        self.join_handle = Some(Rc::new(join_handle));
     }
 
     fn push_to_buffer(&mut self, key: i32, val: i32, deleted: bool) {
@@ -509,6 +522,26 @@ impl LSMTree {
             // Spin until thread empties buffer
         }
         buffer.push((key, val, deleted));
+    }
+}
+
+
+impl Drop for LSMTree {
+    fn drop(&mut self) {
+        self.should_merge.store(false, Ordering::Relaxed);
+        let mut join_handle_ptr = None;
+        self.join_handle = match self.join_handle {
+            Some(ref mut handle) => {
+                join_handle_ptr = Some(Rc::clone(handle));
+                // let handle_clone = Rc::clone(handle);
+                // handle_clone.join();
+                None
+            },
+            None => None,
+        };
+
+        let mut join_handle = (Rc::try_unwrap(join_handle_ptr.unwrap()).unwrap());
+        join_handle.join().unwrap();
     }
 }
 
