@@ -79,6 +79,26 @@ fn test_delete(store: &mut KVStore) {
     }
 }
 
+fn test_scan(store: &mut KVStore) {
+    let mut keys : Vec<i32> = ((0 .. N_VALS as i32).collect());
+    keys.shuffle(&mut thread_rng());
+
+    for &i in &keys {
+        store.put(i, i);
+    }
+
+    let scan_range_size : i32 = 500;
+    assert!(scan_range_size < N_VALS as i32);
+
+    for i in 0 .. (N_VALS / 10 - scan_range_size as usize) as i32 {
+        let range = store.scan(i, i + scan_range_size);
+        assert_eq!(range.len(), scan_range_size as usize);
+        for j in 0 .. scan_range_size {
+            assert_eq!(range[j as usize], i + j);
+        }
+    }
+}
+
 #[cfg(test)]
 mod test_btree {
     use super::*;
@@ -96,6 +116,11 @@ mod test_btree {
     #[test]
     fn delete() {
         test_delete(&mut make_btree("delete"));
+    }
+
+    #[test]
+    fn scan() {
+        test_scan(&mut make_btree("scan"));
     }
 
     #[test]
@@ -138,5 +163,10 @@ mod test_lsm {
     #[test]
     fn delete() {
         test_delete(&mut make_lsm("delete"));
+    }
+
+    #[test]
+    fn scan() {
+        test_scan(&mut make_lsm("scan"));
     }
 }

@@ -6,7 +6,8 @@ authors = ["jameslennon <jameslennon321@gmail.com>"]
 [dependencies]
 byteorder = "1.2.7"
 rand = "0.6.5"
-bencher = "0.1.5"
+# bencher = "0.1.5"
+criterion = "0.2.11"
 
 [[bench]]
 path = "src/benches.rs"
