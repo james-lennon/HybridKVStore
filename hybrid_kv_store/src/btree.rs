@@ -104,6 +104,18 @@ fn build_tree_from_run(
     }
 }
 
+fn find_key_leaf_location(key: i32, cur_node: &mut BTreeNode) -> Rc<RefCell<LeafNode>> {
+    match cur_node {
+        BTreeNode::Intermediate(ref mut node) => {
+            let (new_node, _) = node.find_child(key);
+            find_key_leaf_location(key, new_node)
+        },
+        BTreeNode::Leaf(ref mut node) => {
+            node.clone()
+        },
+    }
+}
+
 
 enum InsertResult {
     NoSplit,
@@ -473,6 +485,12 @@ impl LeafNode {
         }
         Ok(None)
     }
+
+    fn get_entry(&self, index: usize) -> Result<(i32, i32)> {
+        let key = self.location.read_int((ENTRY_SIZE * index) as u64)?;
+        let val = self.location.read_int((ENTRY_SIZE * index + 4) as u64)?;
+        Ok((key, val))
+    }
 }
 
 
@@ -605,6 +623,7 @@ impl BTree {
             BTreeNode::Leaf(ref leaf_node) => {
                 let leaf_node_ref = leaf_node.borrow_mut();
                 println!("LEAF {}", leaf_node_ref.id);
+                println!("size = {}", leaf_node_ref.size);
                 let next_id = match leaf_node_ref.next {
                     Some(ref node) => Some(node.borrow_mut().id),
                     None => None,
@@ -626,6 +645,7 @@ impl BTree {
         }
         // self.print_node(&BTreeNode::Intermediate(&self.root));
     }
+
 }
 
 impl KVStore for BTree {
@@ -660,8 +680,41 @@ impl KVStore for BTree {
         };
     }
 
-    fn scan(&self, low: i32, high: i32) -> Vec<i32> {
-        vec![0, 1, 2, 3]
+    fn scan(&mut self, low: i32, high: i32) -> Vec<i32> {
+        let mut leaf_node = find_key_leaf_location(low, self.root.find_child(low).0);
+        let mut list = Vec::new();
+
+        loop {
+            let mut next_leaf_node = None;
+            {
+                let mut cur_index = 0;
+                let leaf_node_ref = leaf_node.borrow_mut();
+                loop {
+                    let (key, val) = leaf_node_ref.get_entry(cur_index).unwrap();
+                    if key >= high {
+                        break;
+                    }
+                    if key >= low {
+                        list.push(val);
+                    }
+                    cur_index += 1;
+                    if cur_index >= leaf_node_ref.size {
+                        next_leaf_node = leaf_node_ref.next.clone();
+                        break;
+                    }
+                }
+            }
+            match next_leaf_node {
+                Some(node) => {
+                    leaf_node = node.clone();
+                },
+                None => {
+                    break;
+                },
+            }
+        }
+
+        list
     }
 
     fn debug_lookup(&mut self, key: i32) {

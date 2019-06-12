@@ -24,16 +24,10 @@ fn main() {
     btree.put(4, 4);
     btree.put(5, 5);
     btree.debug_print();
-    let mut lsm = btree.into_lsm_tree("lsm_data");
-    // into_lsm();
-    // let mut bt = BTree::new("bt_data", BTreeOptions::new()).unwrap();
-    // println!("Successfully created B-Tree");
-    // test_kvstore(&mut bt);
-    // let mut lsm = LSMTree::new("lsm_data");
-    // println!("Successfully created LSM-Tree");
-    // test_kvstore(&mut lsm);
-    // println!("Testing transition to B-Tree");
-    // test_transition_to_btree(lsm);
+
+    println!("{:?}", btree.scan(2, 5));
+
+    // let mut lsm = btree.into_lsm_tree("lsm_data");
 }
 
 fn test_kvstore(store: &mut KVStore) {

@@ -533,7 +533,7 @@ impl KVStore for LSMTree {
         self.push_to_buffer(key, val, false)
     }
 
-    fn scan(&self, low: i32, high: i32) -> Vec<i32> {
+    fn scan(&mut self, low: i32, high: i32) -> Vec<i32> {
         Vec::new()
     }
 
