@@ -32,7 +32,7 @@ fn bench_bt_get(c: &mut Criterion) {
     let mut btree = make_btree("bench_get");
     let (keys, vals) = rand_init_store(&mut btree, N_VALS);
 
-    c.bench_function("bt_scan", move |b| {
+    c.bench_function("bt_get", move |b| {
         b.iter(|| {
             let i = thread_rng().gen::<usize>() % N_VALS;
             btree.get(keys[i]);
@@ -88,7 +88,7 @@ fn bench_lsm_get(c: &mut Criterion) {
     let mut lsm = make_lsm("bench_get");
     let (keys, vals) = rand_init_store(&mut lsm, N_VALS);
 
-    c.bench_function("bt_scan", move |b| {
+    c.bench_function("lsm_get", move |b| {
         b.iter(|| {
             let i = thread_rng().gen::<usize>() % N_VALS;
             lsm.get(keys[i]);
@@ -96,5 +96,50 @@ fn bench_lsm_get(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_bt_get, bench_bt_update, bench_bt_delete, bench_bt_scan);
+fn bench_lsm_update(c: &mut Criterion) {
+    let mut lsm = make_lsm("bench_update");
+    let (keys, vals) = rand_init_store(&mut lsm, N_VALS);
+
+    c.bench_function("lsm_update", move |b| {
+        b.iter(|| {
+            let i = thread_rng().gen::<usize>() % N_VALS;
+            lsm.put(keys[i], vals[(i + 1) % N_VALS]);
+        });
+    });
+}
+
+fn bench_lsm_delete(c: &mut Criterion) {
+    let mut lsm = make_lsm("bench_delete");
+    let (keys, vals) = rand_init_store(&mut lsm, N_VALS);
+
+    c.bench_function("lsm_delete", move |b| {
+        b.iter(|| {
+            let i = thread_rng().gen::<usize>() % N_VALS;
+            lsm.delete(keys[i]);
+        });
+    });
+}
+
+fn bench_lsm_scan(c: &mut Criterion) {
+    let mut lsm = make_lsm("bench_scan");
+    let n_vals = 10_000;
+    let mut keys : Vec<i32> = ((0 .. n_vals as i32).collect());
+    keys.shuffle(&mut thread_rng());
+
+    for &i in &keys {
+        lsm.put(i, i);
+    }
+
+    let scan_range_size : i32 = 500;
+
+    c.bench_function("lsm_scan", move |b| {
+        b.iter(|| {
+            let start = thread_rng().gen::<i32>() % (n_vals - scan_range_size);
+            lsm.scan(start, start + scan_range_size);
+        });
+    });
+}
+
+criterion_group!(benches, bench_bt_get, bench_bt_update, bench_bt_delete, bench_bt_scan,
+                          bench_lsm_get, bench_lsm_update, bench_lsm_delete, bench_lsm_scan);
 criterion_main!(benches);
