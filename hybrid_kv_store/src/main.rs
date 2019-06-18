@@ -7,12 +7,14 @@ mod lsmtree;
 mod atomic_deque;
 mod constants;
 mod tests;
+mod transitioning_kvstore;
 
 use std::thread;
 use std::time::Duration;
 
 use btree::{BTree, BTreeOptions};
 use lsmtree::LSMTree;
+use transitioning_kvstore::{TransitioningKVStore, TransitionType};
 use kvstore::KVStore;
 
 use tests::{test_delete, test_put, test_scan};
@@ -20,26 +22,36 @@ use tests::{test_delete, test_put, test_scan};
 
 fn main() {
     let mut lsm = LSMTree::new("lsm_data");
-    println!("put");
-    test_put(&mut lsm);
-    lsm = LSMTree::new("lsm_data");
-    println!("delete");
-    test_delete(&mut lsm);
-    lsm = LSMTree::new("lsm_data");
-    println!("scan");
-    test_scan(&mut lsm);
+    lsm.put(1, 1);
+    lsm.put(2, 2);
+    lsm.put(3, 3);
+    lsm.put(4, 4);
+    lsm.put(5, 5);
+    lsm.put(11, 1);
+    lsm.put(12, 2);
+    lsm.put(13, 3);
+    lsm.put(14, 4);
+    lsm.put(15, 5);
+
+    let mut transitioning_store = TransitioningKVStore::new(
+        lsm,
+        TransitionType::SortMerge,
+        "bt_data");
+    transitioning_store.step();
+    transitioning_store.step();
+    transitioning_store.step();
+    transitioning_store.step();
+
+    let mut btree = transitioning_store.into_btree();
+    // btree.debug_print();
+
+    for i in 0 .. 20 {
+        println!("{:?}", btree.get(i));
+    }
+    // let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
+    // let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
     // let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
     // loop {
-    //     lsm.put(1, 1);
-    //     lsm.put(2, 2);
-    //     lsm.put(3, 3);
-    //     lsm.put(4, 4);
-    //     lsm.put(5, 5);
-    //     lsm.put(11, 1);
-    //     lsm.put(12, 2);
-    //     lsm.put(13, 3);
-    //     lsm.put(14, 4);
-    //     lsm.put(15, 5);
     // }
     // btree.debug_print();
 

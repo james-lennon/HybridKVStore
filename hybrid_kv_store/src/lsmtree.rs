@@ -5,7 +5,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{Write, Result};
 use std::slice::Iter;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, AtomicPtr, Ordering};
 use std::thread;
 use std::rc::Rc;
 use std::ops::Drop;
@@ -70,6 +70,41 @@ fn search_levels(levels: &Vec<Run>, key: i32) -> Option<i32> {
 }
 
 
+fn sort_and_compress_buffer(buffer: &mut Vec<(i32, i32, bool)>) {
+    let mut set = HashSet::new();
+    let mut i = buffer.len() - 1;
+    let mut remove_bit_vec = BitVector::new(buffer.len());
+    {
+        loop {
+            let key = buffer[i].0;
+            if set.contains(&key) {
+                remove_bit_vec.set(i);
+            }
+            set.insert(key);
+            if i == 0 {
+                break;
+            } else {
+                i -= 1;
+            }
+        }
+    }
+
+    let mut write_pt = 0;
+    for read_pt in 0..buffer.len() {
+        // Only write if not overwritten
+        if !remove_bit_vec.get(read_pt) {
+            // Sinc it's in-place, we only have to overwrite when there's an offset
+            if write_pt != read_pt {
+                buffer[write_pt] = buffer[read_pt];
+            }
+            write_pt += 1;
+        }
+    }
+    buffer.truncate(write_pt);
+    buffer.sort();
+}
+
+
 #[derive(Debug, PartialEq)]
 enum SearchResult {
     Found(i32),
@@ -77,13 +112,6 @@ enum SearchResult {
     Deleted,
 }
 
-enum MergeSource<'a, T>
-where
-    T: DiskLocation,
-{
-    Buffer(Iter<'a, (i32, i32, bool)>),
-    Disk(Arc<T>),
-}
 
 #[derive(Debug)]
 enum MergeResult {
@@ -98,6 +126,7 @@ pub struct Run {
     capacity: usize,
     bloom_filter: Arc<RefCell<BloomFilter>>,
     fences: Vec<i32>,
+    start_offset: Arc<AtomicUsize>,
 }
 
 impl Run {
@@ -108,21 +137,26 @@ impl Run {
             capacity: capacity,
             bloom_filter: Arc::new(RefCell::new(BloomFilter::new(constants::BLOOM_CAPACITY))),
             fences: Vec::with_capacity(capacity),
+            start_offset: Arc::new(AtomicUsize::new(0)),
         }
     }
 
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
     pub fn search(&self, key: i32) -> SearchResult {
-        // println!("searching bloom...");
         if !self.bloom_filter.borrow_mut().get(&key) {
-            // println!("\tnot found");
             return SearchResult::NotFound;
         }
         if self.size == 0 {
-            // println!("empty");
             return SearchResult::NotFound;
         }
         let num_fences = ((self.size as f64 / ENTRIES_PER_PAGE as f64).ceil() - 1.0) as usize;
-        let mut i = 0;
+        let start = self.start_offset.load(Ordering::Relaxed);
+        let start_fence = start / ENTRIES_PER_PAGE;
+        let start_fence_residual = start % ENTRIES_PER_PAGE;
+        let mut i = start_fence;
         while i < num_fences {
             if key < self.fences[i] {
                 break;
@@ -137,7 +171,7 @@ impl Run {
             } else {
                 (self.size - i * ENTRIES_PER_PAGE)
             };
-        for j in 0..max_idx {
+        for j in start_fence_residual..max_idx {
             let read_key = self.disk_location
                 .read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64)
                 .unwrap();
@@ -162,7 +196,8 @@ impl Run {
     pub fn read_all(&self) -> Vec<(i32, i32, bool)> {
         assert!(self.size <= self.capacity);
         let mut result = Vec::with_capacity(self.size);
-        for i in 0..self.size {
+        let start = self.start_offset.load(Ordering::Relaxed);
+        for i in start..self.size {
             let key = self.disk_location
                 .read_int((i * ENTRY_SIZE) as u64)
                 .unwrap();
@@ -217,6 +252,23 @@ impl Run {
             }
         }
     }
+
+    pub fn peek_lowest(&self) -> (i32, i32) {
+        let start = self.start_offset.load(Ordering::Relaxed);
+        let key = self.disk_location
+            .read_int((start * ENTRY_SIZE) as u64)
+            .unwrap();
+        let val = self.disk_location
+            .read_int((start * ENTRY_SIZE + 4) as u64)
+            .unwrap();
+        (key, val)
+    }
+
+    pub fn increment_offset(&mut self) {
+        let start = self.start_offset.load(Ordering::Relaxed);
+        self.start_offset.store(start + 1, Ordering::Relaxed);
+        self.size -= 1;
+   }
 }
 
 
@@ -420,39 +472,7 @@ impl LSMTree {
                 }
                 // println!("moving from buffer: {:?}\n{:?}", sorted_buffer, buffer);
 
-                let mut set = HashSet::new();
-                let mut i = sorted_buffer.len() - 1;
-                let mut remove_bit_vec = BitVector::new(sorted_buffer.len());
-                {
-                    loop {
-                        let key = sorted_buffer[i].0;
-                        if set.contains(&key) {
-                            remove_bit_vec.set(i);
-                        }
-                        set.insert(key);
-                        if i == 0 {
-                            break;
-                        } else {
-                            i -= 1;
-                        }
-                    }
-                }
-
-                let mut write_pt = 0;
-                for read_pt in 0..sorted_buffer.len() {
-                    // Only write if not overwritten
-                    if !remove_bit_vec.get(read_pt) {
-                        // Sinc it's in-place, we only have to overwrite when there's an offset
-                        if write_pt != read_pt {
-                            sorted_buffer[write_pt] = sorted_buffer[read_pt];
-                        }
-                        write_pt += 1;
-                    }
-                }
-                sorted_buffer.truncate(write_pt);
-
-                sorted_buffer.sort();
-
+                sort_and_compress_buffer(&mut sorted_buffer);
                 // TODO: make so that it re-uses vector between iterations
                 let mut levels = unsafe { &*levels_ptr.load(Ordering::Acquire) };
                 let mut disk_allocator = disk_allocator_ptr.lock().unwrap();
@@ -523,6 +543,16 @@ impl LSMTree {
         }
         buffer.push((key, val, deleted));
     }
+
+    pub fn pop_lowest_n(&mut self, num: usize) -> Vec<(i32, i32)> {
+        // Stop buffer thread
+        self.should_merge.store(false, Ordering::Relaxed);
+
+        let result = extract_lowest_from_lsm_tree(self, num);
+        // Restart buffer thread
+        self.start_buffer_thread();
+        result
+    }
 }
 
 
@@ -578,4 +608,143 @@ impl KVStore for LSMTree {
             println!("Level {}: {:?}", i, lookup_result);
         }
     }
+}
+
+
+/* ########################## */
+/*   MERGING FOR TRANSITIONS  */
+/* ########################## */
+
+
+trait MergeSource {
+    fn peek(&self) -> Option<(i32, i32)>;
+    fn pop(&mut self);
+}
+
+
+#[derive(Debug)]
+struct BufferMergeSource {
+    buffer: Vec<(i32, i32)>,
+    index: usize,
+    removed_keys: Rc<RefCell<HashSet<i32>>>,
+}
+
+impl MergeSource for BufferMergeSource {
+    fn peek(&self) -> Option<(i32, i32)> {
+        if self.index < self.buffer.len() {
+            Some(self.buffer[self.index])
+        } else {
+            None
+        }
+    }
+
+    fn pop(&mut self) {
+        if self.index < self.buffer.len() {
+            self.removed_keys.borrow_mut().insert(self.buffer[self.index].0);
+        }
+        self.index += 1;
+    }
+}
+
+
+#[derive(Debug)]
+struct RunMergeSource<'a> {
+    run: &'a mut Run,
+}
+
+
+impl<'a> MergeSource for RunMergeSource<'a> {
+    fn peek(&self) -> Option<(i32, i32)> {
+        if self.run.size() > 0 {
+            Some(self.run.peek_lowest())
+        } else {
+            None
+        }
+    }
+
+    fn pop(&mut self) {
+        self.run.increment_offset();
+    }
+}
+
+fn extract_lowest_from_lsm_tree(lsmtree: &mut LSMTree, count: usize) -> Vec<(i32, i32)> {
+    let mut heap = BinaryHeap::new();
+    let mut merge_sources : Vec<Box<MergeSource>> = Vec::new();
+    let buffer = unsafe { &mut *lsmtree.buffer.get() };
+
+    let buffer_removed_keys = Rc::new(RefCell::new(HashSet::new()));
+
+    // Add buffer to merge sources
+    if buffer.len() > 0 {
+        let mut sorted_buffer = Vec::with_capacity(buffer.len());
+        buffer.clone_contents_into(&mut sorted_buffer);
+        sort_and_compress_buffer(&mut sorted_buffer);
+
+        let sorted_buffer = sorted_buffer.iter().map(|(k, v, _)| (*k, *v)).collect();
+
+        let buffer_merge_source = BufferMergeSource {
+            buffer: sorted_buffer,
+            index: 0,
+            removed_keys: Rc::clone(&buffer_removed_keys),
+        };
+        heap.push((-buffer_merge_source.peek().unwrap().0, 0));
+        merge_sources.push(Box::new(buffer_merge_source));
+    }
+
+    // Add each level to merge sources
+    let levels = lsmtree.levels.load(Ordering::Relaxed);
+    let num_levels = (unsafe{ &*levels }).len();
+    for i in 0..num_levels {
+        let mut run = &mut (unsafe { &mut *levels })[i];
+        if run.size() > 0 {
+            let mut source = RunMergeSource {
+                run: run,
+            };
+            heap.push((-source.peek().unwrap().0, -(i as i32 + 1)));
+            merge_sources.push(Box::new(source));
+        }
+    }
+
+    // Use heapsort to extract lowest entries
+    let mut result = Vec::new();
+    let mut last_key = None;
+    while heap.len() > 0 {
+        let (key, raw_index) = heap.pop().unwrap();
+        let index = (-raw_index) as usize;
+        let should_push = 
+            match last_key {
+                Some(val) => val != key,
+                None => true,
+            };
+        last_key = Some(key);
+
+        if should_push {
+            if result.len() == count {
+                break;
+            }
+            result.push(merge_sources[index].peek().unwrap());
+        }
+
+        merge_sources[index].pop();
+        match merge_sources[index].peek() {
+            Some((k, _)) => heap.push((-k, raw_index)),
+            None => (),
+        };
+    }
+
+    // Tricky: remove popped entries from buffer
+    let mut read_idx = 0;
+    let mut write_idx = 0;
+    let buffer_removed_keys = buffer_removed_keys.borrow_mut();
+    while read_idx < buffer.len() {
+        println!("writing {} at {}", buffer[read_idx].0, write_idx);
+        buffer[write_idx] = buffer[read_idx];
+        if !buffer_removed_keys.contains(&buffer[read_idx].0) {
+            write_idx += 1;
+        }
+        read_idx += 1;
+    }
+    buffer.truncate(write_idx);
+
+    result
 }

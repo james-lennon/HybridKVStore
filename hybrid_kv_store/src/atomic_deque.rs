@@ -1,4 +1,4 @@
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 
@@ -54,6 +54,14 @@ where
         );
     }
 
+    pub fn truncate(&mut self, n: usize) {
+        let start = self.start.load(Ordering::Acquire);
+        self.end.store(
+            (start + n) % self.capacity,
+            Ordering::Release,
+        );
+    }
+
     pub fn clone_contents_into(&self, dest: &mut Vec<T>) {
         let start = self.start.load(Ordering::Relaxed);
         let end = self.end.load(Ordering::Relaxed);
@@ -75,5 +83,15 @@ where
     fn index(&self, i: usize) -> &T {
         let pos = (self.start.load(Ordering::Relaxed) + i) % self.capacity;
         &self.buffer[pos]
+    }
+}
+
+impl<T> IndexMut<usize> for AtomicDeque<T>
+where
+    T: Clone
+{
+    fn index_mut<'a>(&'a mut self, i: usize) -> &'a mut Self::Output {
+        let pos = (self.start.load(Ordering::Relaxed) + i) % self.capacity;
+        &mut self.buffer[pos]
     }
 }

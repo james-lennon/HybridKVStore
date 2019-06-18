@@ -440,6 +440,18 @@ impl LeafNode {
         }
     }
 
+    fn write_all(&mut self, entries: &Vec<(i32, i32)>) -> Result<()> {
+        for i in 0..entries.len() {
+            self.location.write_int((ENTRY_SIZE * i) as u64, entries[i].0)?;
+            self.location.write_int(
+                (ENTRY_SIZE * i + 4) as u64,
+                entries[i].1,
+            )?;
+        }
+        self.size = entries.len();
+        Ok(())
+    }
+
     fn delete(&mut self, key: i32) -> Result<()> {
         let mut i = 0;
         let mut found = false;
@@ -516,6 +528,7 @@ pub struct BTree {
     disk_allocator: Arc<Mutex<SingleFileBufferAllocator>>,
     options: BTreeOptions,
     root: Box<IntermediateNode>,
+    last_leaf: Option<Rc<RefCell<LeafNode>>>,
 }
 
 impl BTree {
@@ -529,6 +542,7 @@ impl BTree {
             disk_allocator: disk_allocator,
             options: options,
             root: root,
+            last_leaf: None,
         })
     }
 
@@ -544,6 +558,7 @@ impl BTree {
             disk_allocator: disk_allocator,
             options: options,
             root: root,
+            last_leaf: None,
         }
     }
 
@@ -614,11 +629,12 @@ impl BTree {
                 println!("{:?} children", int_node.children.len());
                 for ref f in &int_node.keys {
                     println!("\t{:?}", f);
-                    println!("============================");
                 }
+                println!("============================");
                 for ref c in &int_node.children {
                     self.print_node(c);
                 }
+                println!("END INTERMEDIATE");
             },
             BTreeNode::Leaf(ref leaf_node) => {
                 let leaf_node_ref = leaf_node.borrow_mut();
@@ -640,10 +656,105 @@ impl BTree {
     }
 
     pub fn debug_print(&self) {
-        for ref c in &self.root.children {
-            self.print_node(c)
+        let num_children = self.root.children.len();
+        for i in 0..num_children {
+            if i > 0 {
+                println!("ROOT KEY {}", self.root.keys[i-1]);
+            }
+            self.print_node(&self.root.children[i]);
         }
-        // self.print_node(&BTreeNode::Intermediate(&self.root));
+    }
+
+
+    pub fn insert_batch_right(&mut self, batch: Vec<(i32, i32)>) {
+        if batch.len() == 0 {
+            return;
+        }
+
+        let fence_val = batch[0].0;
+        let mut leaf_node = self.allocate_leaf_node().unwrap();
+        leaf_node.write_all(&batch).unwrap();
+
+        // Update leaf linked-list
+        leaf_node.prev =
+            match &self.last_leaf {
+                Some(ref val) => Some(Rc::clone(val)),
+                None => None,
+            };
+        leaf_node.next = None;
+        
+        let leaf_node = Rc::new(RefCell::new(leaf_node));
+        match self.last_leaf {
+            Some(ref node) => node.borrow_mut().next = Some(Rc::clone(&leaf_node)),
+            None => (),
+        }
+        self.last_leaf = Some(Rc::clone(&leaf_node));
+        let leaf_node = BTreeNode::Leaf(leaf_node);
+
+        // Recursive helper function
+        fn insert_leaf_node_right(node: &mut BTreeNode, leaf_node: BTreeNode, fence_val: i32) -> Option<BTreeNode> {
+            match node {
+                BTreeNode::Intermediate(int_node) => {
+                    let num_children = int_node.children.len();
+                    let insert_node = insert_leaf_node_right(
+                        &mut int_node.children[num_children - 1],
+                        leaf_node,
+                        fence_val);
+                    match insert_node {
+                        Some(insert_node) => {
+                            if int_node.children.len() < constants::FANOUT {
+                                int_node.children.push(insert_node);
+                                int_node.keys.push(fence_val);
+                                None
+                            } else {
+                                Some(insert_node)
+                            }
+                        },
+                        None => None,
+                    }
+                },
+                BTreeNode::Leaf(_) => Some(leaf_node),
+            }
+        };
+
+        // Update starting at root
+        // This is complicated since we want the tree to be
+        // as balanced as possible.
+        if self.is_empty() {
+            let mut new_intermediate_child = IntermediateNode::new();
+            new_intermediate_child.children.push(leaf_node);
+            self.root.children.push(
+                BTreeNode::Intermediate(Box::new(new_intermediate_child)));
+        } else {
+            let num_children = self.root.children.len();
+            let insert_node = insert_leaf_node_right(
+                &mut self.root.children[num_children - 1],
+                leaf_node,
+                fence_val);
+            match insert_node {
+                Some(insert_node) => {
+                    if self.root.children.len() < constants::FANOUT {
+                        let mut new_intermediate_child = IntermediateNode::new();
+                        new_intermediate_child.children.push(insert_node);
+                        self.root.children.push(
+                            BTreeNode::Intermediate(Box::new(new_intermediate_child)));
+                        self.root.keys.push(fence_val);
+                    } else {
+                        let mut new_intermediate_child1 = IntermediateNode::new();
+                        new_intermediate_child1.children = self.root.children
+                            .drain(0..constants::FANOUT).collect();
+                        new_intermediate_child1.keys = self.root.keys
+                            .drain(0..constants::FANOUT).collect();
+
+                        self.root.children = vec![
+                            BTreeNode::Intermediate(Box::new(new_intermediate_child1)),
+                            insert_node];
+                        self.root.keys = vec![fence_val];
+                    }
+                },
+                None => (),
+            }
+        }
     }
 
 }
