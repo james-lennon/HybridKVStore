@@ -22,16 +22,16 @@ use tests::{test_delete, test_put, test_scan};
 
 fn main() {
     let mut lsm = LSMTree::new("lsm_data");
-    lsm.put(1, 1);
-    lsm.put(2, 2);
-    lsm.put(3, 3);
     lsm.put(4, 4);
+    lsm.put(1, 1);
+    lsm.put(3, 3);
+    lsm.put(15, 5);
     lsm.put(5, 5);
+    lsm.put(13, 3);
     lsm.put(11, 1);
     lsm.put(12, 2);
-    lsm.put(13, 3);
+    lsm.put(2, 2);
     lsm.put(14, 4);
-    lsm.put(15, 5);
 
     let mut transitioning_store = TransitioningKVStore::new(
         lsm,

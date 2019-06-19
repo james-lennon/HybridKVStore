@@ -43,7 +43,7 @@ impl TransitioningKVStore {
     fn get_target_for_key<'a>(&'a mut self, key: i32) -> &'a mut KVStore {
         match self.pivot {
             Some(val) =>
-                if key < val {
+                if key <= val {
                     &mut self.btree
                 } else {
                     &mut self.lsmtree
@@ -55,10 +55,12 @@ impl TransitioningKVStore {
 
     pub fn step(&mut self) -> StepResult {
         let batch = self.lsmtree.pop_lowest_n(STEP_SIZE);
-        println!("{:?}", batch);
-        if batch.len() > 0 {
+        let batch_size = batch.len();
+        if batch_size > 0 {
+            let new_pivot = Some(batch[batch_size - 1].0);
             self.btree.insert_batch_right(batch);
-            self.btree.debug_print();
+            // Update pivot
+            self.pivot = new_pivot;
             StepResult::Incomplete
         } else {
             StepResult::Complete
@@ -86,13 +88,13 @@ impl KVStore for TransitioningKVStore {
     fn scan(&mut self, low: i32, high: i32) -> Vec<i32> {
         match self.pivot {
             Some(val) => {
-                if high < val {
+                if high <= val {
                     self.btree.scan(low, high)
-                } else if low >= val {
+                } else if low > val {
                     self.lsmtree.scan(low, high)
                 } else {
-                    let mut result = self.btree.scan(low, val);
-                    result.extend_from_slice(self.lsmtree.scan(val, high).as_slice());
+                    let mut result = self.btree.scan(low, val + 1);
+                    result.extend_from_slice(self.lsmtree.scan(val + 1, high).as_slice());
                     result
                 }
             },

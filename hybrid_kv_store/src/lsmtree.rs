@@ -737,7 +737,6 @@ fn extract_lowest_from_lsm_tree(lsmtree: &mut LSMTree, count: usize) -> Vec<(i32
     let mut write_idx = 0;
     let buffer_removed_keys = buffer_removed_keys.borrow_mut();
     while read_idx < buffer.len() {
-        println!("writing {} at {}", buffer[read_idx].0, write_idx);
         buffer[write_idx] = buffer[read_idx];
         if !buffer_removed_keys.contains(&buffer[read_idx].0) {
             write_idx += 1;

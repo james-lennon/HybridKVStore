@@ -7,6 +7,8 @@ use btree::{BTree, BTreeOptions};
 use lsmtree::LSMTree;
 use kvstore::KVStore;
 
+use transitioning_kvstore::{StepResult, TransitioningKVStore, TransitionType};
+
 use self::rand::{thread_rng, Rng};
 use self::rand::seq::SliceRandom;
 
@@ -170,5 +172,44 @@ mod test_lsm {
     #[test]
     fn scan() {
         test_scan(&mut make_lsm("scan"));
+    }
+
+    #[test]
+    fn into_btree() {
+        let mut lsm = make_lsm("lsm_to_btree_1");
+        println!("Initializing lsm...");
+        let (keys, vals) = rand_init_store(&mut lsm, N_VALS);
+        println!("Transitioning to B-Tree...");
+
+        let mut transition = TransitioningKVStore::new(
+            lsm,
+            TransitionType::SortMerge,
+            "btree_to_lsm_2");
+
+        let n_transitions = 20;
+        for i in 0..n_transitions {
+            transition.step();
+            transition.step();
+            println!("Verifying... ({} of {})", i, n_transitions);
+            for i in 0 .. keys.len() / 2 {
+                // println!("testing key {} ({} of {})", keys[i], i, keys.len());
+                assert_eq!(transition.get(keys[i]), Some(vals[i]));
+            }
+        }
+
+        println!("Finishing transition...");
+        loop {
+            match transition.step() {
+                StepResult::Complete => break,
+                StepResult::Incomplete => (),
+            }
+        }
+
+        // // Overwrite keys and values to make sure updates work
+        // let (keys2, vals2) = rand_init_store(&mut lsm, N_VALS);
+        // for i in 0 .. keys2.len() {
+        //     println!("overwriting {}", keys2[i]);
+        //     assert_eq!(lsm.get(keys2[i]), Some(vals2[i]));
+        // }
     }
 }

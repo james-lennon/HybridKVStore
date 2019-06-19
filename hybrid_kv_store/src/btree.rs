@@ -744,7 +744,7 @@ impl BTree {
                         new_intermediate_child1.children = self.root.children
                             .drain(0..constants::FANOUT).collect();
                         new_intermediate_child1.keys = self.root.keys
-                            .drain(0..constants::FANOUT).collect();
+                            .drain(0..constants::FANOUT - 1).collect();
 
                         self.root.children = vec![
                             BTreeNode::Intermediate(Box::new(new_intermediate_child1)),
