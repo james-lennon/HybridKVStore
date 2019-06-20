@@ -33,7 +33,9 @@ pub fn rand_init_store(store: &mut KVStore, size: usize) -> (Vec<i32>, Vec<i32>)
     vals.shuffle(&mut rng);
 
     for i in 0..size {
-        // println!("adding... {}", i);
+        // if i % 100 == 0 {
+        //     println!("adding... {}", i);
+        // }
         store.put(keys[i], vals[i]);
     }
 

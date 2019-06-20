@@ -8,6 +8,7 @@ mod atomic_deque;
 mod constants;
 mod tests;
 mod transitioning_kvstore;
+mod workload;
 
 use std::thread;
 use std::time::Duration;
@@ -17,37 +18,45 @@ use lsmtree::LSMTree;
 use transitioning_kvstore::{TransitioningKVStore, TransitionType};
 use kvstore::KVStore;
 
-use tests::{test_delete, test_put, test_scan};
+use tests::{test_delete, test_put, test_scan, rand_init_store};
 
 
 fn main() {
+    let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
+    println!("Initializing BTree");
+    rand_init_store(&mut btree, 10_000);
+    workload::simulate_store(&mut btree, "btree_latencies.txt");
     let mut lsm = LSMTree::new("lsm_data");
-    lsm.put(4, 4);
-    lsm.put(1, 1);
-    lsm.put(3, 3);
-    lsm.put(15, 5);
-    lsm.put(5, 5);
-    lsm.put(13, 3);
-    lsm.put(11, 1);
-    lsm.put(12, 2);
-    lsm.put(2, 2);
-    lsm.put(14, 4);
+    println!("Initializing LSMTree");
+    rand_init_store(&mut lsm, 10_000);
+    workload::simulate_store(&mut lsm, "lsm_latencies.txt");
+    // let mut lsm = LSMTree::new("lsm_data");
+    // lsm.put(4, 4);
+    // lsm.put(1, 1);
+    // lsm.put(3, 3);
+    // lsm.put(15, 5);
+    // lsm.put(5, 5);
+    // lsm.put(13, 3);
+    // lsm.put(11, 1);
+    // lsm.put(12, 2);
+    // lsm.put(2, 2);
+    // lsm.put(14, 4);
 
-    let mut transitioning_store = TransitioningKVStore::new(
-        lsm,
-        TransitionType::SortMerge,
-        "bt_data");
-    transitioning_store.step();
-    transitioning_store.step();
-    transitioning_store.step();
-    transitioning_store.step();
+    // let mut transitioning_store = TransitioningKVStore::new(
+    //     lsm,
+    //     TransitionType::SortMerge,
+    //     "bt_data");
+    // transitioning_store.step();
+    // transitioning_store.step();
+    // transitioning_store.step();
+    // transitioning_store.step();
 
-    let mut btree = transitioning_store.into_btree();
-    // btree.debug_print();
+    // let mut btree = transitioning_store.into_btree();
+    // // btree.debug_print();
 
-    for i in 0 .. 20 {
-        println!("{:?}", btree.get(i));
-    }
+    // for i in 0 .. 20 {
+    //     println!("{:?}", btree.get(i));
+    // }
     // let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
     // let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
     // let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
