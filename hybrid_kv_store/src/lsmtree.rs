@@ -212,9 +212,8 @@ impl Run {
             i += 1;
         }
 
-        // println!("{:?}", min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)));
         let max_idx =
-            if i * ENTRIES_PER_PAGE > self.size || i * ENTRIES_PER_PAGE > ENTRIES_PER_PAGE {
+            if i < num_fences {
                 min(ENTRIES_PER_PAGE, self.size)
             } else {
                 (self.size - i * ENTRIES_PER_PAGE)
@@ -229,12 +228,11 @@ impl Run {
             let read_key = self.disk_location
                 .read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64)
                 .unwrap();
-            // println!("{:?} {}", read_key, key);
             if read_key >= key {
                 return i * ENTRIES_PER_PAGE + j;
             }
         }
-	i * ENTRIES_PER_PAGE + max_idx
+    	i * ENTRIES_PER_PAGE + max_idx
     }
 
     pub fn read_all(&self) -> Vec<(i32, i32, bool)> {
@@ -715,14 +713,18 @@ impl KVStore for LSMTree {
             }
 
             if (raw_rank == 0) {
-                heap.push((-sorted_buffer[index].0, 0, index + 1));
+                if index < sorted_buffer.len() - 1 {
+                    heap.push((-sorted_buffer[index].0, 0, index + 1));
+                }
             } else {
                 let level_num = -(raw_rank + 1) as usize;
-                heap.push((levels[level_num].disk_location
-                               .read_int((index * ENTRY_SIZE) as u64)
-                               .unwrap(),
-                           raw_rank,
-                           index + 1));
+                if index < levels[level_num].size - 1 {
+                    heap.push((levels[level_num].disk_location
+                                   .read_int((index * ENTRY_SIZE) as u64)
+                                   .unwrap(),
+                               raw_rank,
+                               index + 1));
+                }
             }
         }
 
