@@ -651,7 +651,7 @@ impl KVStore for LSMTree {
             buffer.clone_contents_into(&mut sorted_buffer);
             sort_and_compress_buffer(&mut sorted_buffer);
         }
-        let sorted_buffer = sorted_buffer.iter().map(|(k, v, _)| (*k, *v)).collect();
+        let sorted_buffer : Vec<(i32, i32)> = sorted_buffer.iter().map(|(k, v, _)| (*k, *v)).collect();
 
 	      // Find low and high indices of query in this sorted buffer
         // Add buffer element to heap
