@@ -11,6 +11,7 @@ mod lsmtree;
 mod atomic_deque;
 mod constants;
 mod tests;
+mod transitioning_kvstore;
 
 use std::{thread, time};
 
