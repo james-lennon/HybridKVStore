@@ -200,6 +200,9 @@ impl Run {
     }
 
     pub fn find_lowest_index_ge_key(&self, key : i32) -> usize {
+        if self.size == 0 {
+            return 0;
+        }
         let num_fences = ((self.size as f64 / ENTRIES_PER_PAGE as f64).ceil() - 1.0) as usize;
         let start = self.start_offset.load(Ordering::Relaxed);
         let start_fence = start / ENTRIES_PER_PAGE;
