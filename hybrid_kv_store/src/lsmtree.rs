@@ -171,7 +171,13 @@ impl Run {
             } else {
                 (self.size - i * ENTRIES_PER_PAGE)
             };
-        for j in start_fence_residual..max_idx {
+        let min_idx =
+	    if i == start_fence {
+	        start_fence_residual
+	    } else {
+                0
+            };
+        for j in min_idx..max_idx {
             let read_key = self.disk_location
                 .read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64)
                 .unwrap();
@@ -191,6 +197,44 @@ impl Run {
             }
         }
         return SearchResult::NotFound;
+    }
+
+    pub fn find_lowest_index_ge_key(&self, key : i32) -> usize {
+        let num_fences = ((self.size as f64 / ENTRIES_PER_PAGE as f64).ceil() - 1.0) as usize;
+        let start = self.start_offset.load(Ordering::Relaxed);
+        let start_fence = start / ENTRIES_PER_PAGE;
+        let start_fence_residual = start % ENTRIES_PER_PAGE;
+        let mut i = start_fence;
+        while i < num_fences {
+            if key < self.fences[i] {
+                break;
+            }
+            i += 1;
+        }
+
+        // println!("{:?}", min(ENTRIES_PER_PAGE, (self.size - i * ENTRIES_PER_PAGE)));
+        let max_idx =
+            if i * ENTRIES_PER_PAGE > self.size || i * ENTRIES_PER_PAGE > ENTRIES_PER_PAGE {
+                min(ENTRIES_PER_PAGE, self.size)
+            } else {
+                (self.size - i * ENTRIES_PER_PAGE)
+            };
+        let min_idx =
+            if i == start_fence {
+                start_fence_residual
+            } else {
+                0
+            };
+        for j in min_idx..max_idx {
+            let read_key = self.disk_location
+                .read_int(((i * ENTRIES_PER_PAGE + j) * ENTRY_SIZE) as u64)
+                .unwrap();
+            // println!("{:?} {}", read_key, key);
+            if read_key >= key {
+                return i * ENTRIES_PER_PAGE + j;
+            }
+        }
+	i * ENTRIES_PER_PAGE + max_idx
     }
 
     pub fn read_all(&self) -> Vec<(i32, i32, bool)> {
@@ -597,7 +641,92 @@ impl KVStore for LSMTree {
     }
 
     fn scan(&mut self, low: i32, high: i32) -> Vec<i32> {
-        Vec::new()
+        let mut heap = BinaryHeap::new();   // Heap to execute scan (key, rank, current index)
+        let mut high_indices = Vec::new();  // Vector to track high indices
+
+        // Create a sorted, compressed buffer to use
+        let buffer = unsafe { &mut *self.buffer.get() };
+        let mut sorted_buffer = Vec::with_capacity(buffer.len());
+        if (buffer.len() > 0)  {
+            buffer.clone_contents_into(&mut sorted_buffer);
+            sort_and_compress_buffer(&mut sorted_buffer);
+        }
+        let sorted_buffer = sorted_buffer.iter().map(|(k, v, _)| (*k, *v)).collect();
+
+	      // Find low and high indices of query in this sorted buffer
+        // Add buffer element to heap
+        // Add high_buffer_index to high_indices
+        let mut i = 0;
+        while (i < sorted_buffer.len() && sorted_buffer[i].0 < low) {
+            i += 1;
+        }
+        let low_buffer_index = i;
+        while (i < sorted_buffer.len() && sorted_buffer[i].0 < high) {
+            i += 1;
+        }
+        let high_buffer_index = i;
+        if (high_buffer_index > low_buffer_index)  {
+            heap.push((-sorted_buffer[low_buffer_index].0, 0, low_buffer_index));
+        }
+        high_indices.push(high_buffer_index);
+
+        // Get low and high indices of run
+        // Add run element to heap
+        // Add high index to high_indices
+        let levels = unsafe { &*self.levels.load(Ordering::Relaxed) };
+        for i in 0..levels.len() {
+            let run = &levels[i];
+            let low_index = run.find_lowest_index_ge_key(low);
+            let high_index = run.find_lowest_index_ge_key(high);
+            if (high_index > low_index) {
+                heap.push((run.disk_location.read_int((low_index * ENTRY_SIZE) as u64).unwrap(),
+                           -(i as i32 + 1),
+                           low_index));
+            }
+            high_indices.push(high_index);
+        }
+
+        // Iterate extracting lowest entries
+        let mut range_result = Vec::new();
+        let mut last_key = None;
+        while heap.len() > 0 {
+            let (key, raw_rank, index) = heap.pop().unwrap();
+            let should_push =
+                match last_key {
+                    Some(val) => val != key,
+                    None => true,
+                };
+            last_key = Some(key);
+
+            if should_push {
+                if (raw_rank == 0)  {
+                    range_result.push(sorted_buffer[index].1);
+                } else {
+                    let level_num = -(raw_rank + 1) as usize;
+                    let insert_val = levels[level_num].disk_location
+                                         .read_int((index * ENTRY_SIZE + 4) as u64)
+                                         .unwrap();
+                    range_result.push(insert_val);
+                }
+            }
+
+            if (index == high_indices[-raw_rank as usize]) {
+                continue;
+            }
+
+            if (raw_rank == 0) {
+                heap.push((-sorted_buffer[index].0, 0, index + 1));
+            } else {
+                let level_num = -(raw_rank + 1) as usize;
+                heap.push((levels[level_num].disk_location
+                               .read_int((index * ENTRY_SIZE) as u64)
+                               .unwrap(),
+                           raw_rank,
+                           index + 1));
+            }
+        }
+
+        range_result
     }
 
     fn debug_lookup(&mut self, key: i32) {
@@ -711,7 +840,7 @@ fn extract_lowest_from_lsm_tree(lsmtree: &mut LSMTree, count: usize) -> Vec<(i32
     while heap.len() > 0 {
         let (key, raw_index) = heap.pop().unwrap();
         let index = (-raw_index) as usize;
-        let should_push = 
+        let should_push =
             match last_key {
                 Some(val) => val != key,
                 None => true,
