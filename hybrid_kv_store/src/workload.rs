@@ -6,7 +6,10 @@ use std::fs::File;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
+use lsmtree::LSMTree;
 use kvstore::KVStore;
+use tests::rand_init_store;
+use transitioning_kvstore::{TransitioningKVStore, TransitionType};
 
 
 const MAX_KEY : i32 = 10_000;
@@ -19,15 +22,6 @@ enum QueryType {
     Put,
     Scan,
 }
-
-// static write_weighted_items : [Weighted<QueryType>] =
-//     [
-//         Weighted { weight: 2, item: QueryType::Get },
-//         Weighted { weight: 4, item: QueryType::Put },
-//         Weighted { weight: 1, item: QueryType::Scan },
-//     ];
-// static write_workload : WeightedChoice<QueryType> =
-//     WeightedChoice::new(&mut write_weighted_items);
 
 
 fn run_query(store: &mut KVStore, qtype: QueryType) {
@@ -73,7 +67,7 @@ fn get_write_heavy_items() -> Vec<Weighted<QueryType>> {
 fn get_read_heavy_items() -> Vec<Weighted<QueryType>> {
     vec![
         Weighted { weight: 80, item: QueryType::Get },
-        Weighted { weight: 1, item: QueryType::Put },
+        Weighted { weight: 0, item: QueryType::Put },
         Weighted { weight: 0, item: QueryType::Scan },
         // 19
     ]
@@ -90,4 +84,30 @@ pub fn simulate_store(store: &mut KVStore, filename: &'static str) {
     latencies.append(&mut run_workload(store, read_workload, 1000));
 
     save_latencies(latencies, filename);
+}
+
+pub fn simulate_transition(lsm_filename: &'static str, btree_filename: &'static str, latencies_filename: &'static str) {
+    let mut lsm = LSMTree::new(lsm_filename);
+    rand_init_store(&mut lsm, 10_000);
+
+    let mut write_items = get_write_heavy_items();
+    let write_workload = WeightedChoice::new(&mut write_items);
+    let mut read_items = get_read_heavy_items();
+    // let read_workload = WeightedChoice::new(&mut read_items);
+
+    let mut latencies = run_workload(&mut lsm, write_workload, 1000);
+    let mut transition = TransitioningKVStore::new(lsm, TransitionType::SortMerge, btree_filename);
+    for i in 0..100 {
+        transition.step();
+        let mut read_items2 = get_read_heavy_items();
+        let mut items = read_items.clone();
+        let read_workload2 = WeightedChoice::new(&mut items);
+        latencies.append(&mut run_workload(&mut transition, read_workload2, 5));
+    }
+    let mut btree = transition.into_btree();
+    let mut items = read_items.clone();
+    let read_workload2 = WeightedChoice::new(&mut items);
+    latencies.append(&mut run_workload(&mut btree, read_workload2, 500));
+
+    save_latencies(latencies, latencies_filename);
 }

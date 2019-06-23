@@ -17,7 +17,9 @@ def smoothed(data, amt=100):
 # filename = sys.argv[1]
 # data = smoothed(np.loadtxt(filename))
 # plt.plot(data)
-filenames = {"btree_latencies" : "B-Tree", "lsm_latencies": "LSM-Tree"}
+filenames = {"btree_latencies" : "B-Tree",
+	"lsm_latencies": "LSM-Tree",
+	"transition_latencies": "Transition"}
 # ideal_data = np.ones(3900) * 100.
 for f in filenames:
 	fname = "{}.txt".format(f)

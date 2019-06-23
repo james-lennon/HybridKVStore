@@ -30,6 +30,10 @@ fn main() {
     println!("Initializing LSMTree");
     rand_init_store(&mut lsm, 10_000);
     workload::simulate_store(&mut lsm, "lsm_latencies.txt");
+
+    workload::simulate_transition("lsm_data", "bt_data", "transition_latencies.txt");
+
+
     // let mut lsm = LSMTree::new("lsm_data");
     // lsm.put(4, 4);
     // lsm.put(1, 1);

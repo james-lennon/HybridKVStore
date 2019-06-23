@@ -485,16 +485,27 @@ impl LeafNode {
     }
 
     fn lookup(&self, key: i32) -> Result<Option<i32>> {
-        let mut i = 0;
-        // Scan for matching key
-        while i < self.size {
-            let read_key = self.location.read_int((ENTRY_SIZE * i) as u64)?;
-            if key == read_key {
-                let val = self.location.read_int((ENTRY_SIZE * i + 4) as u64)?;
-                return Ok(Some(val));
+        // Binary search time
+        let mut lo = 0;
+        let mut hi = self.size - 1;
+        while lo <= hi {
+            let mid = (lo + hi) / 2;
+            let read_key = self.location.read_int((ENTRY_SIZE * mid) as u64)?;
+            if read_key > key {
+                // Prevent underflow
+                if mid == 0 {
+                    break;
+                }
+                hi = mid - 1;
+            } else if read_key < key {
+                lo = mid + 1;
+            } else {
+                let val = self.location.read_int((ENTRY_SIZE * mid + 4) as u64)?;
+                return Ok(Some(val))
             }
-            i += 1;
+
         }
+
         Ok(None)
     }
 
