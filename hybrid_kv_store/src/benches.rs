@@ -19,6 +19,7 @@ use tests::{make_btree, make_lsm, rand_init_store};
 use btree::{BTree, BTreeOptions};
 use lsmtree::LSMTree;
 use kvstore::KVStore;
+use transitioning_kvstore::{TransitioningKVStore, TransitionType, StepResult};
 
 use self::criterion::Criterion;
 use self::criterion::black_box;
@@ -141,6 +142,29 @@ fn bench_lsm_scan(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_bt_get, bench_bt_update, bench_bt_delete, bench_bt_scan,
-                          bench_lsm_get, bench_lsm_update, bench_lsm_delete, bench_lsm_scan);
+fn bench_bt_get_after_transition(c: &mut Criterion) {
+    let mut lsm = make_lsm("bench_bt_get_lsm");
+    let (keys, vals) = rand_init_store(&mut lsm, N_VALS);
+    let mut transition = TransitioningKVStore::new(lsm, TransitionType::SortMerge, "bench_bt_get_after_transition");
+
+    loop {
+        match transition.step() {
+            StepResult::Complete => { break; },
+            StepResult::Incomplete => (),
+        }
+    }
+
+    let mut btree = transition.into_btree();
+
+    c.bench_function("bt_get_after_transition", move |b| {
+        b.iter(|| {
+            let i = thread_rng().gen::<usize>() % N_VALS;
+            btree.get(keys[i]);
+        });
+    });
+}
+
+criterion_group!(benches, bench_bt_get_after_transition, bench_bt_get, bench_bt_update, bench_bt_delete, bench_bt_scan,
+                          bench_lsm_get, bench_lsm_update, bench_lsm_delete, bench_lsm_scan
+                          );
 criterion_main!(benches);

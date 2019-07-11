@@ -11,7 +11,7 @@ def smoothed(data, amt=100):
 	result = []
 	for i in range(len(data) - amt):
 		end = min(i + amt, len(data))
-		result.append(np.mean(data[i:end]))
+		result.append(np.mean(data[i:end]) / 1000)
 	return result
 
 # filename = sys.argv[1]
@@ -24,14 +24,17 @@ filenames = {"btree_latencies" : "B-Tree",
 for f in filenames:
 	fname = "{}.txt".format(f)
 	data = smoothed(np.loadtxt(fname))
-	plt.plot(data, label=filenames[f], linewidth=2.0)
+	width = 2.0
+	if f == "transition_latencies":
+		width = 4.0
+	plt.plot(data, label=filenames[f], linewidth=width)
 
 # ideal_data = [np.mean(ideal_data[:2000])] * 2000 + [np.mean(ideal_data[2000:])] * 1900
 
 # plt.plot(ideal_data, color='black', linestyle="--", linewidth=3.2, label="Ideal Data Structure")
 
 # plt.xlabel("Query")
-plt.ylabel("Latency (normalized)", fontsize=AXIS_FONT_SIZE)
+plt.ylabel("Latency ($\mu s$)", fontsize=AXIS_FONT_SIZE)
 plt.tick_params(axis='y', labelsize=16)
 plt.xticks([])
 # plt.title("")

@@ -7,6 +7,8 @@ use std::vec::Vec;
 use std::io::Result;
 use std::fs::create_dir_all;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use self::rand::{thread_rng, Rng};
 
 use constants;
@@ -162,7 +164,7 @@ impl IntermediateNode {
         let (child, _) = self.find_child(key);
         match *child {
             BTreeNode::Intermediate(ref mut node) => node.lookup(key),
-            BTreeNode::Leaf(ref mut node) => node.borrow_mut().lookup(key),
+            BTreeNode::Leaf(ref mut node) => { node.borrow_mut().lookup(key) },
         }
     }
 
@@ -376,6 +378,9 @@ impl LeafNode {
             }
             child1_ref.size = constants::FANOUT / 2;
             child2_ref.size = constants::FANOUT - (constants::FANOUT / 2);
+
+            child1_ref.location.write_byte((ENTRY_SIZE * child1_ref.size - 1) as u64, 0)?;
+            child2_ref.location.write_byte((ENTRY_SIZE * child2_ref.size - 1) as u64, 0)?;
         }
         Ok((child1, child2, fence))
     }
@@ -434,20 +439,24 @@ impl LeafNode {
                 (ENTRY_SIZE * i + 4) as u64,
                 next_val,
             )?;
+            self.location.write_byte((ENTRY_SIZE * i + 4 + 4) as u64, 0)?;
             // Update size
             self.size += 1;
             Ok(InsertResult::NoSplit)
         }
     }
 
-    fn write_all(&mut self, entries: &Vec<(i32, i32)>) -> Result<()> {
-        for i in 0..entries.len() {
-            self.location.write_int((ENTRY_SIZE * i) as u64, entries[i].0)?;
-            self.location.write_int(
-                (ENTRY_SIZE * i + 4) as u64,
-                entries[i].1,
-            )?;
-        }
+    fn write_all(&mut self, entries: &[(i32, i32)]) -> Result<()> {
+        let converted_entries : Vec<(i32, i32, bool)> = (0..entries.len()).map(|i| (entries[i].0, entries[i].1, false)).collect();
+        self.location.write_entries(0, &converted_entries);
+        // // TODO: make more efficient
+        // for i in 0..entries.len() {
+        //     self.location.write_int((ENTRY_SIZE * i) as u64, entries[i].0)?;
+        //     self.location.write_int(
+        //         (ENTRY_SIZE * i + 4) as u64,
+        //         entries[i].1,
+        //     )?;
+        // }
         self.size = entries.len();
         Ok(())
     }
@@ -485,12 +494,17 @@ impl LeafNode {
     }
 
     fn lookup(&self, key: i32) -> Result<Option<i32>> {
+        // let start = Instant::now();
+        let entries = self.location.read_entries(0, self.size)?;
+        // let nanos = start.elapsed().as_nanos();
+        // println!("{} {:?}", self.size, nanos);
         // Binary search time
         let mut lo = 0;
         let mut hi = self.size - 1;
         while lo <= hi {
             let mid = (lo + hi) / 2;
-            let read_key = self.location.read_int((ENTRY_SIZE * mid) as u64)?;
+            // let read_key = self.location.read_int((ENTRY_SIZE * mid) as u64)?;
+            let read_key = entries[mid].0;
             if read_key > key {
                 // Prevent underflow
                 if mid == 0 {
@@ -500,7 +514,8 @@ impl LeafNode {
             } else if read_key < key {
                 lo = mid + 1;
             } else {
-                let val = self.location.read_int((ENTRY_SIZE * mid + 4) as u64)?;
+                // let val = self.location.read_int((ENTRY_SIZE * mid + 4) as u64)?;
+                let val = entries[mid].1;
                 return Ok(Some(val))
             }
 
@@ -677,7 +692,7 @@ impl BTree {
     }
 
 
-    pub fn insert_batch_right(&mut self, batch: Vec<(i32, i32)>) {
+    pub fn insert_batch_right(&mut self, batch: &[(i32, i32)]) {
         if batch.len() == 0 {
             return;
         }
@@ -811,8 +826,10 @@ impl KVStore for BTree {
             {
                 let mut cur_index = 0;
                 let leaf_node_ref = leaf_node.borrow_mut();
+                let entries = leaf_node_ref.location.read_entries(0, leaf_node_ref.size).unwrap();
                 loop {
-                    let (key, val) = leaf_node_ref.get_entry(cur_index).unwrap();
+                    // let (key, val) = leaf_node_ref.get_entry(cur_index).unwrap();
+                    let (key, val, _) = entries[cur_index];
                     if key >= high {
                         break;
                     }

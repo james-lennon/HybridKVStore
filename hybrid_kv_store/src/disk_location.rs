@@ -28,6 +28,27 @@ fn read_ints_from_file(file: &mut File, offset: u64, count: usize) -> Result<Vec
     Ok(buffer)
 }
 
+fn read_entries_from_file(file: &mut File, offset: u64, count: usize) -> Result<Vec<(i32, i32, bool)>> {
+    let mut buffer = Vec::with_capacity(count);
+    file.seek(SeekFrom::Start(offset))?;
+    for i in 0..count {
+        let key = file.read_i32::<BigEndian>().unwrap();
+        let val = file.read_i32::<BigEndian>().unwrap();
+        let del = file.read_u8().unwrap() == 1;
+        buffer.push((key, val, del));
+    }
+    Ok(buffer)
+}
+
+fn write_entries_to_file(file: &mut File, offset: u64, buffer: &[(i32, i32, bool)]) {
+    file.seek(SeekFrom::Start(offset)).unwrap();
+    for (k, v, d) in buffer {
+        file.write_i32::<BigEndian>(*k).unwrap();
+        file.write_i32::<BigEndian>(*v).unwrap();
+        file.write_u8(if *d { 0 } else { 1 }).unwrap();
+    }
+}
+
 fn read_int_from_file(file: &mut File, offset: u64) -> Result<i32> {
     file.seek(SeekFrom::Start(offset))?;
     file.read_i32::<BigEndian>()
@@ -60,6 +81,8 @@ pub trait DiskLocation: Debug {
     fn write_int(&self, offset: u64, value: i32) -> Result<()>;
     fn write_byte(&self, offset: u64, value: u8) -> Result<()>;
     fn clone_with_offset(&self, offset: u64) -> Arc<DiskLocation>;
+    fn read_entries(&self, offset: u64, count: usize) -> Result<Vec<(i32, i32, bool)>>;
+    fn write_entries(&self, offset: u64, entries: &[(i32, i32, bool)]);
 }
 
 
@@ -135,6 +158,20 @@ impl DiskLocation for ContiguousDiskLocation {
             filename: self.filename.clone(),
             offset: self.offset + offset,
         })
+    }
+
+    fn read_entries(&self, offset: u64, count: usize) -> Result<Vec<(i32, i32, bool)>> {
+        let mut file = OpenOptions::new().read(true).open(
+            &self.filename,
+        )?;
+        read_entries_from_file(&mut file, offset + self.offset, count)
+    }
+
+    fn write_entries(&self, offset: u64, entries: &[(i32, i32, bool)]) {
+        let mut file = OpenOptions::new().write(true).open(
+            &self.filename,
+        ).unwrap();
+        write_entries_to_file(&mut file, offset + self.offset, entries);
     }
 }
 
@@ -212,5 +249,17 @@ impl DiskLocation for FragmentedDiskLocation {
         //     filename: self.fences.clone(),
         //     offset: self.offset + offset,
         // })
+    }
+
+    fn read_entries(&self, offset: u64, count: usize) -> Result<Vec<(i32, i32, bool)>> {
+        panic!("read_entries not implemented for fragmented disk locations.");
+        // let mut file = OpenOptions::new().write(true).read(true).open(
+        //     &self.filename,
+        // )?;
+        // read_entries_from_file(&mut file, offset + self.offset, count)
+    }
+
+    fn write_entries(&self, offset: u64, entries: &[(i32, i32, bool)]) {
+        panic!("write_entries not implemented for fragmented disk locations.");
     }
 }

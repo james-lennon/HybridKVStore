@@ -58,7 +58,12 @@ impl TransitioningKVStore {
         let batch_size = batch.len();
         if batch_size > 0 {
             let new_pivot = Some(batch[batch_size - 1].0);
-            self.btree.insert_batch_right(batch);
+            for i in 0..TRANSITION_STEP_N_BLOCKS {
+                let start_idx = i * FANOUT;
+                let end_idx = (i + 1) * FANOUT;
+                // let end_idx = start_idx + 1;
+                self.btree.insert_batch_right(&batch[start_idx .. end_idx]);
+            }
             // Update pivot
             self.pivot = new_pivot;
             StepResult::Incomplete

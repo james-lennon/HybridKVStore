@@ -11,7 +11,6 @@ mod transitioning_kvstore;
 mod workload;
 
 use std::thread;
-use std::time::Duration;
 
 use btree::{BTree, BTreeOptions};
 use lsmtree::LSMTree;
@@ -20,16 +19,20 @@ use kvstore::KVStore;
 
 use tests::{test_delete, test_put, test_scan, rand_init_store};
 
+use std::fs::{OpenOptions, File};
+use std::time::{Duration, Instant};
+extern crate byteorder;
+use self::byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 fn main() {
-    let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
-    println!("Initializing BTree");
-    rand_init_store(&mut btree, 10_000);
-    workload::simulate_store(&mut btree, "btree_latencies.txt");
-    let mut lsm = LSMTree::new("lsm_data");
-    println!("Initializing LSMTree");
-    rand_init_store(&mut lsm, 10_000);
-    workload::simulate_store(&mut lsm, "lsm_latencies.txt");
+    // let mut btree = BTree::new("bt_data", BTreeOptions::new()).unwrap();
+    // println!("Initializing BTree");
+    // rand_init_store(&mut btree, 10_000);
+    // workload::simulate_store(&mut btree, "btree_latencies.txt");
+    // let mut lsm = LSMTree::new("lsm_data");
+    // println!("Initializing LSMTree");
+    // rand_init_store(&mut lsm, 10_000);
+    // workload::simulate_store(&mut lsm, "lsm_latencies.txt");
 
     workload::simulate_transition("lsm_data", "bt_data", "transition_latencies.txt");
 

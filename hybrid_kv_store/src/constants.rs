@@ -15,4 +15,4 @@ pub const BUFFER_CAPACITY: usize = 100_000;
 pub const TREE_RATIO: usize = 3;
 
 /* Transition Constants */
-pub const TRANSITION_STEP_N_BLOCKS : usize = 33;
+pub const TRANSITION_STEP_N_BLOCKS : usize = 99;
